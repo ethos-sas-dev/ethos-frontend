@@ -13,7 +13,7 @@ CREATE TYPE configuracion_frecuencia AS ENUM ('Mensual', 'Bimestral', 'Trimestra
 
 -- perfil_cliente enums
 CREATE TYPE perfil_cliente_tipo_persona AS ENUM ('Natural', 'Juridica');
-CREATE TYPE perfil_cliente_rol AS ENUM ('Propietario', 'Arrendatario');
+CREATE TYPE perfil_cliente_rol AS ENUM ('Propietario', 'Arrendatario', 'Externo');
 
 -- perfil_operacional enums
 CREATE TYPE perfil_operacional_rol AS ENUM ('Jefe Operativo', 'Administrador', 'Directorio');
@@ -211,7 +211,7 @@ CREATE TABLE propiedades (
     actividad propiedad_actividad,
     monto_alicuota_ordinaria NUMERIC(12, 2),
     areas_desglosadas JSONB,
-    pagos JSONB,
+    encargado_pago perfil_cliente_rol,
     imagen_id INT UNIQUE,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now(),

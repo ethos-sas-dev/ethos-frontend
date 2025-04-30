@@ -50,7 +50,7 @@ const SkeletonProjectList = ({ count = 3 }: { count?: number }) => (
 const ProjectCard = ({ project }: { project: Project }) => {
   const router = useRouter();
   const imageUrl = project.foto_proyecto?.external_url;
-
+  console.log(imageUrl);
   return (
     <motion.div
       key={project.id}
@@ -153,9 +153,8 @@ export default function ProyectosPage() {
           // Transformar datos antes de setear el estado
           const transformedData = (data || []).map(proj => ({
             ...proj,
-            foto_proyecto: Array.isArray(proj.foto_proyecto) && proj.foto_proyecto.length > 0
-                             ? proj.foto_proyecto[0] // Tomar el primer objeto del array
-                             : null // O setear a null si no hay imagen
+            // Use type assertion to bypass incorrect TS inference
+            foto_proyecto: (proj.foto_proyecto as any) ?? null
           }));
           fetchedProjects = transformedData;
 
@@ -188,14 +187,13 @@ export default function ProyectosPage() {
             // Transformar datos antes de setear el estado
             const transformedProjectsData = (projectsData || []).map(proj => ({
                 ...proj,
-                foto_proyecto: Array.isArray(proj.foto_proyecto) && proj.foto_proyecto.length > 0
-                                 ? proj.foto_proyecto[0] // Tomar el primer objeto del array
-                                 : null // O setear a null si no hay imagen
+                // Use type assertion to bypass incorrect TS inference
+                 foto_proyecto: (proj.foto_proyecto as any) ?? null
             }));
             fetchedProjects = transformedProjectsData;
           } else {
             // No hay proyectos asignados
-            fetchedProjects = [];
+             fetchedProjects = []; // Fix syntax error
           }
         }
         setProjects(fetchedProjects);

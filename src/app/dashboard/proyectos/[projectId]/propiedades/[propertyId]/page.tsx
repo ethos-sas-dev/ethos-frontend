@@ -95,7 +95,7 @@ type PerfilClienteDetails = {
     contacto_proveedores?: Contacto;
     contacto_accesos?: Contacto;
     contratos_arrendamiento?: any | null; // JSONB - define structure if needed
-    rol?: 'Propietario' | 'Arrendatario' | null; // perfil_cliente_rol
+    rol?: 'Propietario' | 'Arrendatario' | 'Externo' | null; // perfil_cliente_rol
     persona_natural_id?: number | null;
     persona_juridica_id?: number | null;
     persona_natural?: any | null; // Temporarily set to any for debugging
@@ -127,6 +127,7 @@ type Property = {
     ocupante_externo?: boolean | null;
     propietario_id?: number | null;
     ocupante_id?: number | null;
+    encargado_pago?: 'Propietario' | 'Arrendatario' | 'Externo' | null;
     historico_ocupantes?: any | null; // JSONB
     identificadores?: any | null; // JSONB - Define structure if possible
     estado_de_construccion?: 'enPlanos' | 'terreno' | 'enConstruccion' | 'obraGris' | 'acabados' | 'finalizada' | 'remodelacion' | 'demolicion' | 'abandonada' | 'paralizada' | null; // propiedad_estado_construccion
@@ -135,12 +136,11 @@ type Property = {
     monto_alicuota_ordinaria?: number | null; // NUMERIC(12, 2)
     areas_desglosadas?: AreaDesglosada[] | null; // JSONB
     pagos?: any | null; // JSONB
-    imagen_id?: number | null;
+    imagen?: string | null;
     created_at: string;
     updated_at: string;
 
     // Relations loaded via Supabase join
-    imagen?: Archivo | null; // Joined from archivos using imagen_id
     propietario?: PerfilClienteDetails | null; // Joined from perfiles_cliente using propietario_id
     ocupante?: PerfilClienteDetails | null; // Joined from perfiles_cliente using ocupante_id
     proyecto?: {
@@ -304,6 +304,7 @@ export default function PropertyDetailPage() {
     const [documentMap, setDocumentMap] = useState<DocumentMap>({}); // State for fetched documents
     const [showImageModal, setShowImageModal] = useState(false);
     const [uploadingImage, setUploadingImage] = useState(false);
+    const [updatingOccupancy, setUpdatingOccupancy] = useState(false); // State for occupancy updates
     const [missingOwnerDocs, setMissingOwnerDocs] = useState(0);
     const [missingTenantDocs, setMissingTenantDocs] = useState(0);
 
@@ -330,8 +331,9 @@ export default function PropertyDetailPage() {
         try {
             // Step 1: Fetch property data including document IDs
             const selectString = `
-                id, proyecto_id, codigo_catastral, estado_entrega, estado_uso, area_total, historico_tasas, modo_incognito, escritura_pdf_id, acta_entrega_pdf_id, contrato_arrendamiento_pdf_id, ocupante_externo, propietario_id, ocupante_id, historico_ocupantes, identificadores, estado_de_construccion, monto_fondo_inicial, actividad, monto_alicuota_ordinaria, areas_desglosadas, pagos, imagen_id, created_at, updated_at,
-                imagen:archivos!imagen_id (id, external_storage_key, external_url, filename, created_at, updated_at),
+                id, proyecto_id, codigo_catastral, estado_entrega, estado_uso, area_total, historico_tasas, modo_incognito, escritura_pdf_id, acta_entrega_pdf_id, contrato_arrendamiento_pdf_id, ocupante_externo, propietario_id, ocupante_id, historico_ocupantes, identificadores, estado_de_construccion, monto_fondo_inicial, actividad, monto_alicuota_ordinaria, areas_desglosadas, pagos, created_at, updated_at,
+                encargado_pago,
+                imagen,
                 proyecto:proyectos!inner (id, nombre),
                 propietario:perfiles_cliente!propietario_id (
                     id, usuario_id, tipo_persona, contacto_gerente, contacto_administrativo, contacto_proveedores, contacto_accesos, contratos_arrendamiento, rol, persona_natural_id, persona_juridica_id,
@@ -574,6 +576,55 @@ export default function PropertyDetailPage() {
         }
     };
 
+    // --- Occupancy Management Functions ---
+    const handleSetOccupancy = async (updates: Partial<Property>) => {
+        if (!property || !supabase) return;
+        setUpdatingOccupancy(true);
+        setError(null);
+
+        try {
+            // Ensure we don't accidentally update ocupante_externo unless intended
+            const finalUpdates = { ...updates };
+            if (!('ocupante_externo' in finalUpdates)) {
+                 // If not explicitly setting externo, ensure it's false when ID is set/removed
+                 if (finalUpdates.ocupante_id !== undefined) {
+                    finalUpdates.ocupante_externo = false;
+                 }
+            }
+
+
+            const { error: updateError } = await supabase
+                .from('propiedades')
+                .update(finalUpdates) // Use finalUpdates
+                .eq('id', property.id);
+
+            if (updateError) throw updateError;
+
+            console.log("Occupancy updated successfully:", finalUpdates);
+            // Refresh data to show changes
+            await fetchPropertyDetails();
+
+        } catch (err: any) {
+            console.error("Error updating occupancy:", err);
+            setError(err.message || "Error al actualizar la ocupación.");
+        } finally {
+            setUpdatingOccupancy(false);
+        }
+    };
+
+    const handleRemoveOccupant = () => {
+         handleSetOccupancy({ ocupante_id: null, ocupante_externo: false }); // Set ID to null and externo to false
+    };
+
+    // New function to set the current owner as the occupant
+    const handleSetOwnerAsOccupant = () => {
+        if (property?.propietario_id) {
+             handleSetOccupancy({ ocupante_id: property.propietario_id, ocupante_externo: false });
+        } else {
+            setError("No hay propietario asignado a esta propiedad para establecer como ocupante.");
+        }
+    };
+
     // --- Helper Functions ---
     const getIdentificador = (tipo: 'superior' | 'idSuperior' | 'inferior' | 'idInferior' | 'intermedio' | 'idIntermedio') => {
         // Ensure identificadores is accessed safely
@@ -584,6 +635,8 @@ export default function PropertyDetailPage() {
     const getRazonSocial = (perfil: PerfilClienteDetails | null | undefined): string => {
         if (!perfil) return '-';
         // Use 'razon_social' for PersonaNatural based on schema's likely intent
+        // Added check for rol 'Externo'
+        if (perfil.rol === 'Externo') return 'Ocupante Externo';
         return perfil.persona_natural?.razon_social || perfil.persona_juridica?.razon_social || perfil.persona_juridica?.nombre_comercial || 'N/A';
     }
 
@@ -591,6 +644,7 @@ export default function PropertyDetailPage() {
         const ocupanteProfile = property?.ocupante;
 
         if (ocupanteProfile) {
+            // Check the role directly from the joined ocupante profile
             if (ocupanteProfile.rol === 'Arrendatario') {
                  return {
                     status: "Uso Arrendatario",
@@ -598,23 +652,22 @@ export default function PropertyDetailPage() {
                     colorClasses: "bg-orange-100 text-orange-800"
                  };
             } else if (ocupanteProfile.rol === 'Propietario') {
-                 // Owner explicitly assigned as occupant
                  return {
-                     status: "Uso Propietario", // Simplified status name
+                     status: "Uso Propietario",
                      name: getRazonSocial(ocupanteProfile),
                      colorClasses: "bg-purple-100 text-purple-800"
                  };
+            } else if (ocupanteProfile.rol === 'Externo') {
+                // Handle the 'Externo' role
+                return {
+                    status: "Uso Externo",
+                    name: "Ocupante Externo", // Display generic name
+                    colorClasses: "bg-sky-100 text-sky-800"
+                };
             }
-            // Handle potential other roles for ocupanteProfile if needed
-        } else if (property?.ocupante_externo) {
-            // External occupant defined
-            return {
-                status: "Uso Externo",
-                name: "Ocupante Externo",
-                colorClasses: "bg-sky-100 text-sky-800"
-            };
+            // Handle potential other roles if needed
         }
-        // Removed the implicit owner check here
+        // Removed ocupante_externo check - logic now depends entirely on ocupante_id and its role.
 
         // Default: Property is unassigned
         return {
@@ -711,7 +764,7 @@ export default function PropertyDetailPage() {
         );
     }
 
-     const imageUrl = property.imagen?.external_url || "/bodega.png"; // Use joined imagen data
+     const imageUrl = property.imagen || "/bodega.png"; // Use joined imagen data
      const { status: occupancyStatus, name: occupantDisplayName, colorClasses: occupancyColor } = getEffectiveOccupancyStatus();
 
     // --- Helper function to render documents for a profile ---
@@ -799,6 +852,33 @@ export default function PropertyDetailPage() {
         );
     };
 
+    // --- Helper function to render contact info ---
+    const renderContactInfo = (label: string, contacto: Contacto | undefined | null) => {
+        if (!contacto) {
+            return null; // Don't render if contact object is null/undefined
+        }
+
+        const nombre = contacto.nombre || '-';
+        const email = contacto.email || '-';
+        const telefono = contacto.telefono || '-';
+
+        // Don't render if all fields are empty/default
+        if (nombre === '-' && email === '-' && telefono === '-') {
+            return null;
+        }
+
+        return (
+            <div className="grid grid-cols-4 gap-1 items-center">
+                <span className="font-medium text-gray-600 col-span-1">{label}:</span>
+                <span className="text-gray-800 col-span-3 truncate" title={nombre}>{nombre}</span>
+                <span className="col-span-1"></span> {/* Spacer */}
+                <span className="text-gray-500 col-span-3 truncate" title={email}>{email}</span>
+                <span className="col-span-1"></span> {/* Spacer */}
+                <span className="text-gray-500 col-span-3 truncate" title={telefono}>{telefono}</span>
+            </div>
+        );
+    };
+
     // --- JSX ---
     return (
         <motion.div
@@ -880,7 +960,7 @@ export default function PropertyDetailPage() {
                                 {/* Area Badge */}
                                 {property.area_total != null && (
                                      <span className="px-3 py-1 rounded-full text-xs font-medium bg-white/20 backdrop-blur-sm shadow-sm border border-white/20">
-                                        {formatNumber(property.area_total ?? 0)} m²
+                                        {formatNumber(property.area_total ?? 0, true)} m²
                                     </span>
                                 )}
                             </div>
@@ -963,13 +1043,27 @@ export default function PropertyDetailPage() {
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                              <div className="bg-gray-50 rounded-lg p-3">
                                  <p className="text-xs text-gray-500 mb-0.5">Fondo Inicial</p>
-                                 <p className="text-lg font-semibold">${formatNumber(property.monto_fondo_inicial ?? 0)}</p>
+                                 <p className="text-lg font-semibold">${formatNumber(property.monto_fondo_inicial ?? 0, true)}</p>
                              </div>
                              <div className="bg-gray-50 rounded-lg p-3">
                                 <p className="text-xs text-gray-500 mb-0.5">Alícuota Ordinaria (Ref.)</p>
-                                <p className="text-lg font-semibold">${formatNumber(property.monto_alicuota_ordinaria ?? 0)}</p>
+                                <p className="text-lg font-semibold">${formatNumber(property.monto_alicuota_ordinaria ?? 0, true)}</p>
                              </div>
                              {/* Add other payment info if needed */}
+                             <div className="sm:col-span-2 border-t pt-4 mt-4">
+                                 <p className="text-sm text-gray-500 flex items-center">
+                                     <CurrencyDollarIcon className="h-4 w-4 mr-1.5 text-gray-400" />
+                                     Responsable de Pago:
+                                     <span className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${ 
+                                        property.encargado_pago === 'Propietario' ? 'bg-purple-100 text-purple-800' : 
+                                        property.encargado_pago === 'Arrendatario' ? 'bg-orange-100 text-orange-800' :
+                                        property.encargado_pago === 'Externo' ? 'bg-sky-100 text-sky-800' :
+                                        'bg-gray-100 text-gray-800' 
+                                    }`}>
+                                         {property.encargado_pago || 'No definido'}
+                                     </span>
+                                 </p>
+                            </div>
                          </div>
                     </div>
 
@@ -1002,8 +1096,8 @@ export default function PropertyDetailPage() {
                                 docId={property.contrato_arrendamiento_pdf_id}
                                 docName="Contrato Arrendamiento"
                                 documentMap={documentMap}
-                                // This might be optional depending on context, adjust isMissing logic if needed
-                                isMissing={!property.contrato_arrendamiento_pdf_id || !documentMap[property.contrato_arrendamiento_pdf_id]}
+                                // Only consider missing if the occupant is an Arrendatario AND the doc doesn't exist
+                                isMissing={property.ocupante?.rol === 'Arrendatario' && (!property.contrato_arrendamiento_pdf_id || !documentMap[property.contrato_arrendamiento_pdf_id])}
                                 docType="contrato_arrendamiento_pdf_id"
                                 targetTable="propiedades"
                                 targetId={property.id}
@@ -1059,16 +1153,15 @@ export default function PropertyDetailPage() {
                                       {renderProfileDocuments(property.propietario, 'Propietario')}
                                  </div>
 
-                                 {/* Contact Info Placeholder */}
+                                 {/* Contact Info */}
                                  <div className="pt-3 border-t mt-3">
-                                     <h3 className="text-sm font-semibold mb-2">Contacto Propietario</h3>
-                                      <p className="text-xs text-gray-500 italic">Información de contacto del propietario irá aquí.</p>
-                                      {/* Example: Display a specific contact field */}
-                                      {property.propietario.contacto_accesos && (
-                                          <div className="mt-2">
-                                              <p>Acceso: {property.propietario.contacto_accesos.nombre} ({property.propietario.contacto_accesos.email})</p>
-                                          </div>
-                                      )}
+                                     <h3 className="text-sm font-semibold mb-2">Contactos Propietario</h3>
+                                     <div className="space-y-2 text-xs">
+                                         {renderContactInfo('Gerente', property.propietario.contacto_gerente)}
+                                         {renderContactInfo('Admin.', property.propietario.contacto_administrativo)}
+                                         {renderContactInfo('Proveedores', property.propietario.contacto_proveedores)}
+                                         {renderContactInfo('Accesos', property.propietario.contacto_accesos)}
+                                     </div>
                                  </div>
                              </div>
                          ) : (
@@ -1079,7 +1172,7 @@ export default function PropertyDetailPage() {
                                     <Button
                                         className="bg-[#007F44] hover:bg-[#007F44]/80"
                                         size="sm"
-                                        onClick={() => router.push(`/dashboard/proyectos/${projectId}/propiedades/${propertyId}/asignar-cliente?role=Propietario`)}
+                                        onClick={() => router.push(`/dashboard/proyectos/${projectId}/propiedades/${propertyId}/asignar-cliente?assignRole=Propietario`)}
                                     >
                                         <UserPlusIcon className="h-4 w-4 mr-1" /> Asignar Propietario
                                     </Button>
@@ -1089,19 +1182,41 @@ export default function PropertyDetailPage() {
                      </div>
 
                       {/* Ocupante Info (Conditionally Rendered based on status) */}
-                      {occupancyStatus !== 'Sin Asignar' && ( // Show this section unless status is 'Sin Asignar'
-                         <div className="bg-white rounded-xl border p-4 md:p-6 shadow-sm">
-                             <div className="flex justify-between items-center mb-4">
-                                <h2 className="text-lg font-semibold">Ocupante</h2>
-                                {isAdmin && (
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => router.push(`/dashboard/proyectos/${projectId}/propiedades/${propertyId}/asignar-cliente?role=Arrendatario`)}
-                                    >
-                                       <UserPlusIcon className="h-3 w-3 mr-1" /> Gestionar Ocupante
-                                    </Button>
-                                )}
+                      <div className="bg-white rounded-xl border p-4 md:p-6 shadow-sm">
+                          <div className="flex justify-between items-center mb-4">
+                              <h2 className="text-lg font-semibold">Ocupante</h2>
+                               {/* Dropdown para gestionar ocupante (solo Admins) */}
+                               {isAdmin && (
+                                   <DropdownMenu>
+                                       <DropdownMenuTrigger asChild>
+                                           <Button
+                                               size="sm"
+                                               variant="outline"
+                                               disabled={updatingOccupancy} // Disable while updating
+                                           >
+                                                <PencilSquareIcon className="h-4 w-4 mr-1" />
+                                               Gestionar
+                                               {updatingOccupancy && <span className="ml-2 h-3 w-3 animate-spin rounded-full border-b-2 border-current"></span>}
+                                           </Button>
+                                       </DropdownMenuTrigger>
+                                       <DropdownMenuContent align="end">
+                                           <DropdownMenuItem asChild>
+                                                <Link href={`/dashboard/proyectos/${projectId}/propiedades/${propertyId}/asignar-cliente?assignRole=Ocupante`}>
+                                                    <UserPlusIcon className="h-4 w-4 mr-2" />
+                                                    Asignar Ocupante (Arr./Ext.)
+                                                </Link>
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={handleSetOwnerAsOccupant} disabled={updatingOccupancy || !property.propietario_id || property.ocupante_id === property.propietario_id}>
+                                               <UserCircleIcon className="h-4 w-4 mr-2" />
+                                               Establecer Propietario como Ocupante
+                                           </DropdownMenuItem>
+                                           <DropdownMenuItem onClick={handleRemoveOccupant} disabled={updatingOccupancy || !property.ocupante_id} className="text-red-600 focus:text-red-700 focus:bg-red-50">
+                                               <XCircleIcon className="h-4 w-4 mr-2" />
+                                               Quitar Ocupante
+                                           </DropdownMenuItem>
+                                       </DropdownMenuContent>
+                                   </DropdownMenu>
+                               )}
                            </div>
 
                            {/* Content based on occupancy status */}
@@ -1136,16 +1251,15 @@ export default function PropertyDetailPage() {
                                         {renderProfileDocuments(property.ocupante, 'Ocupante')}
                                     </div>
 
-                                     {/* Contact Info Placeholder */}
+                                     {/* Contact Info */}
                                     <div className="pt-3 border-t mt-3">
-                                        <h3 className="text-sm font-semibold mb-2">Contacto Ocupante</h3>
-                                        <p className="text-xs text-gray-500 italic">Información de contacto del ocupante irá aquí.</p>
-                                         {/* Example: Display a specific contact field */}
-                                         {property.ocupante.contacto_administrativo && (
-                                             <div className="mt-2">
-                                                 <p>Admin: {property.ocupante.contacto_administrativo.nombre} ({property.ocupante.contacto_administrativo.email})</p>
-                                             </div>
-                                         )}
+                                        <h3 className="text-sm font-semibold mb-2">Contactos Ocupante</h3>
+                                         <div className="space-y-2 text-xs">
+                                             {renderContactInfo('Gerente', property.ocupante.contacto_gerente)}
+                                             {renderContactInfo('Admin.', property.ocupante.contacto_administrativo)}
+                                             {renderContactInfo('Proveedores', property.ocupante.contacto_proveedores)}
+                                             {renderContactInfo('Accesos', property.ocupante.contacto_accesos)}
+                                         </div>
                                     </div>
                                </div>
                             ) : occupancyStatus === 'Uso Externo' ? (
@@ -1153,37 +1267,25 @@ export default function PropertyDetailPage() {
                                 <div className="text-center py-6">
                                     <UserGroupIcon className="h-10 w-10 mx-auto text-gray-400 mb-2" />
                                     <p className="text-sm text-gray-500">Ocupante Externo registrado.</p>
-                                    <p className="text-xs text-gray-400 italic mt-2">Documentos no aplicables para ocupante externo.</p>
+                                    {/* We might still want to show minimal info if available in profile */}
+                                    {/* e.g., <p>Nombre: {getRazonSocial(property.ocupante)}</p> */}
+                                    <p className="text-xs text-gray-400 italic mt-2">Documentos no aplicables para este tipo de rol.</p>
                                 </div>
-                            ) : occupancyStatus === 'Uso Propietario' ? ( // Updated check for the single status
+                            ) : occupancyStatus === 'Uso Propietario' ? (
                                // Display Owner is Occupant Message
                                <div className="text-center py-6">
-                                    {/* <UserIcon className="h-8 w-8 mx-auto text-[#000000] mb-2"/> */}
                                    <p className="text-sm text-gray-600">El ocupante de esta propiedad es el propietario.</p>
-                                   {/* Removed the note about explicit assignment */}
                                 </div>
-                            ) : null /* Fallback */ }
+                            ) : occupancyStatus === 'Sin Asignar' ? (
+                                // Message if no occupant assigned yet
+                                <div className="text-center py-6">
+                                    <ExclamationTriangleIcon className="h-8 w-8 mx-auto text-gray-400 mb-2" />
+                                    <p className="text-sm text-gray-500">Propiedad sin ocupante asignado.</p>
+                                    {/* El botón para asignar está en el dropdown de arriba ahora */}
+                                </div>
+                            ): null /* Fallback, shouldn't happen */ }
                          </div>
-                     )}
-
-                     {/* Message if no owner and no occupant */}
-                      {occupancyStatus === 'Sin Asignar' && ( // Adjusted condition
-                          <div className="bg-white rounded-xl border p-4 md:p-6 shadow-sm text-center">
-                              <ExclamationTriangleIcon className="h-8 w-8 mx-auto text-gray-400 mb-2" />
-                             <p className="text-sm text-gray-600">Propiedad sin propietario ni ocupante asignado.</p>
-                             {isAdmin && ( // Suggest assigning owner if missing
-                                 !property.propietario &&
-                                 <Button
-                                     size="sm"
-                                     className="bg-[#007F44] hover:bg-[#007F44]/80 mt-3"
-                                     onClick={() => router.push(`/dashboard/proyectos/${projectId}/propiedades/${propertyId}/asignar-cliente?role=Propietario`)}
-                                 >
-                                     <UserPlusIcon className="h-4 w-4 mr-1" /> Asignar Propietario
-                                 </Button>
-                             )}
-                         </div>
-                      )}
-
+ 
                  </div>
 
              </div>

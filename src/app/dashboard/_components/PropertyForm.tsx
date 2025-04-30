@@ -58,7 +58,7 @@ export type PropertyFormData = { // Exportar para que la página la use
     usarAreasDesglosadas: boolean;
     area_total: number | null;
     areas_desglosadas: AreaDesglosadaItem[];
-    pagos: PagosData;
+    encargado_pago: typeof ENCARGADOS_PAGO[number]['value'] | null;
     monto_fondo_inicial: number | null; // Mantenido aquí, calculado antes de submit
     monto_alicuota_ordinaria: number | null; // Mantenido aquí, calculado antes de submit
 };
@@ -95,9 +95,7 @@ const defaultInitialData: PropertyFormData = {
     usarAreasDesglosadas: false,
     area_total: null,
     areas_desglosadas: [],
-    pagos: {
-        encargadoDePago: 'Propietario',
-    },
+    encargado_pago: 'Propietario',
     monto_fondo_inicial: null,
     monto_alicuota_ordinaria: null,
 };
@@ -146,10 +144,7 @@ export function PropertyForm({
                 tipo_area: area.tipo_area || null,
                 nombre_adicional: area.nombre_adicional || null
             })),
-            pagos: {
-                // Aseguramos que `initialData.pagos` es un objeto antes de acceder
-                encargadoDePago: (typeof initialData?.pagos === 'object' && initialData.pagos !== null) ? initialData.pagos.encargadoDePago || 'Propietario' : 'Propietario',
-            },
+            encargado_pago: initialData?.encargado_pago || 'Propietario',
             monto_fondo_inicial: initialData?.monto_fondo_inicial ?? null, // Usar ??
             monto_alicuota_ordinaria: initialData?.monto_alicuota_ordinaria ?? null, // Usar ??
         });
@@ -341,9 +336,7 @@ export function PropertyForm({
                     return { area: rest.area ?? null, tipo_area: rest.tipo_area ?? null, nombre_adicional: rest.nombre_adicional ?? null };
                 })
                 : [],
-            pagos: {
-                encargadoDePago: formData.pagos.encargadoDePago,
-            },
+            encargado_pago: formData.encargado_pago,
             monto_fondo_inicial: montoFondoInicial,
             monto_alicuota_ordinaria: montoAlicuotaOrdinaria,
             // 'estado_uso' will likely default to 'disponible' in the DB for creation
@@ -492,11 +485,11 @@ export function PropertyForm({
 
                 {/* Encargado de Pago */}
                 <div>
-                    <Label htmlFor="pagos.encargadoDePago">Encargado de Pago</Label>
+                    <Label htmlFor="encargado_pago">Encargado de Pago</Label>
                     <Select
-                        name="pagos.encargadoDePago"
-                        value={formData.pagos.encargadoDePago ?? 'Propietario'}
-                        onValueChange={(value: string) => handleSelectChange('pagos.encargadoDePago', value)}
+                        name="encargado_pago"
+                        value={formData.encargado_pago ?? 'Propietario'}
+                        onValueChange={(value: string) => handleSelectChange('encargado_pago', value)}
                     >
                         <SelectTrigger className="mt-1">
                             <SelectValue />

@@ -213,15 +213,14 @@ const DirectorioDashboard = () => {
         const { count: projectCount, error: projectError } = await supabase.from('proyectos').select('*' , { count: 'exact', head: true })
         const { count: clientCount, error: clientError } = await supabase.from('perfiles_cliente').select('*' , { count: 'exact', head: true })
         const { data: paidInvoices, error: paidError } = await supabase.from('facturas').select('total').eq('estado', 'Pagada')
-        const { data: expenses, error: expenseError } = await supabase.from('gastos').select('monto')
         
-        if (projectError || clientError || paidError || expenseError) {
-          console.error('Supabase count/fetch errors:', { projectError, clientError, paidError, expenseError })
+        if (projectError || clientError || paidError) {
+          console.error('Supabase count/fetch errors:', { projectError, clientError, paidError })
           throw new Error('Error al cargar datos del dashboard')
         }
 
         const totalIngresos = paidInvoices?.reduce((sum, inv) => sum + (inv.total ?? 0), 0) ?? 0;
-        const totalEgresos = expenses?.reduce((sum, exp) => sum + (exp.monto ?? 0), 0) ?? 0;
+        const totalEgresos = 0;
 
         setStats({
           proyectos: projectCount ?? 0,

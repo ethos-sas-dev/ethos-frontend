@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useAuth } from "@/app/_lib/auth/AuthContext";
 import { createClient } from '../../../../../lib/supabase/client';
 import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { MagnifyingGlassIcon } from "@heroicons/react/20/solid";
 import {
     ArrowLeftIcon,
     BuildingOffice2Icon,
@@ -18,7 +19,8 @@ import {
 } from "@heroicons/react/24/outline";
 import { motion } from "framer-motion";
 import PropertyCard from "./_components/PropertyCard";
-
+import { useDebounce } from '@uidotdev/usehooks';
+import { Input } from "../../../_components/ui/input";
 // --- Types ---
 type ProjectDetails = {
     id: number;
@@ -55,9 +57,7 @@ type Property = {
     estado_uso: string;
     monto_alicuota_ordinaria?: number | null;
     area_total?: number | null;
-    imagen?: {
-        external_url?: string | null;
-    } | null;
+    imagen?: string | null;
     proyecto_id: number; // Include for consistency
     propietario_id?: number | null;
     ocupante_id?: number | null;
@@ -104,8 +104,13 @@ export default function ProjectDetailPage() {
     const [hasMore, setHasMore] = useState(true);
     const [isLoadingProject, setIsLoadingProject] = useState(true);
     const [isLoadingProperties, setIsLoadingProperties] = useState(false);
+    const [isSearching, setIsSearching] = useState(false); // Added state for search loading indication
     const [error, setError] = useState<string | null>(null);
-    const [menuOpen, setMenuOpen] = useState(false); // State for project options menu
+    const [menuOpen, setMenuOpen] = useState(false);
+
+    // Search State
+    const [searchTerm, setSearchTerm] = useState("");
+    const debouncedSearchTerm = useDebounce(searchTerm, 500);
 
     const supabase = createClient();
 
@@ -146,9 +151,8 @@ export default function ProjectDetailPage() {
                  // Transform data slightly to match ProjectDetails type for photo
                 const transformedData = {
                     ...data,
-                    foto_proyecto: Array.isArray(data.foto_proyecto) && data.foto_proyecto.length > 0
-                                    ? data.foto_proyecto[0]
-                                    : null
+                    // Use type assertion to bypass potential incorrect TS inference
+                    foto_proyecto: (data.foto_proyecto as any) ?? null
                 };
                 setProject(transformedData);
             } catch (err: any) {
@@ -162,91 +166,74 @@ export default function ProjectDetailPage() {
         fetchProjectDetails();
     }, [projectId, supabase, role, isAuthLoading, router]);
 
-    // Fetch Properties (Paginated)
-    const fetchProperties = useCallback(async (pageNum: number) => {
+    // Fetch Properties (Paginated and Searchable using RPC)
+    const fetchProperties = useCallback(async (pageNum: number, currentSearchTerm: string) => {
         if (!projectId) return;
         setIsLoadingProperties(true);
-        // setError(null); // Keep previous errors potentially visible while loading more
+        if (pageNum === 0) {
+            setIsSearching(true); 
+            setError(null); 
+        }
 
-        const rangeFrom = pageNum * PROPERTIES_PER_PAGE;
-        const rangeTo = rangeFrom + PROPERTIES_PER_PAGE - 1;
+        // Parameters for the RPC call
+        const rpcParams = {
+            p_id: parseInt(projectId, 10), // Ensure projectId is an integer
+            search_pattern: currentSearchTerm ? `%${currentSearchTerm.trim().replace(/\s+/g, '%')}%` : '%', // Pass the pattern or '%' if empty
+            page_limit: PROPERTIES_PER_PAGE,
+            page_offset: pageNum * PROPERTIES_PER_PAGE
+        };
 
         try {
-            const { data, error: dbError } = await supabase
-                .from('propiedades')
-                .select(`
-                    id,
-                    identificadores,
-                    actividad,
-                    estado_uso,
-                    monto_alicuota_ordinaria,
-                    area_total,
-                    proyecto_id,
-                    propietario_id,
-                    ocupante_id,
-                    ocupante_externo,
-                    imagen:archivos!imagen_id ( external_url ),
-                    propietario:perfiles_cliente!propietario_id (
-                        id,
-                        rol,
-                        persona_natural:personas_natural!persona_natural_id(razon_social),
-                        persona_juridica:personas_juridica!persona_juridica_id(razon_social, nombre_comercial)
-                    ),
-                    ocupante:perfiles_cliente!ocupante_id (
-                        id,
-                        rol,
-                        persona_natural:personas_natural!persona_natural_id(razon_social),
-                        persona_juridica:personas_juridica!persona_juridica_id(razon_social, nombre_comercial)
-                    )
-                `)
-                .eq('proyecto_id', projectId)
-                .order('id', { ascending: true })
-                .range(rangeFrom, rangeTo);
+            console.log("Calling RPC buscar_propiedades_proyecto with params:", rpcParams);
+            // Call the database function instead of building the query manually
+            const { data, error: rpcError } = await supabase
+                .rpc('buscar_propiedades_proyecto', rpcParams);
 
-            if (dbError) throw dbError;
+            if (rpcError) throw rpcError;
 
-            // Transform data: handle nested arrays from Supabase joins
-            const transformedData = (data || []).map(prop => {
-                const propietario = Array.isArray(prop.propietario) ? prop.propietario[0] ?? null : prop.propietario;
-                const ocupante = Array.isArray(prop.ocupante) ? prop.ocupante[0] ?? null : prop.ocupante;
+            // Assuming the RPC function returns data in the same structure as the previous select
+            // If the RPC function returns a count, use that for pagination, otherwise estimate.
+            const propertiesData = data || []; // RPC might return null on no results
 
-                return {
-                    ...prop,
-                    imagen: Array.isArray(prop.imagen) && prop.imagen.length > 0
-                              ? prop.imagen[0]
-                              : null,
-                    propietario: propietario ? {
-                        ...propietario,
-                        persona_natural: Array.isArray(propietario.persona_natural) ? propietario.persona_natural[0] ?? null : propietario.persona_natural,
-                        persona_juridica: Array.isArray(propietario.persona_juridica) ? propietario.persona_juridica[0] ?? null : propietario.persona_juridica,
-                    } : null,
-                    ocupante: ocupante ? {
-                        ...ocupante,
-                        persona_natural: Array.isArray(ocupante.persona_natural) ? ocupante.persona_natural[0] ?? null : ocupante.persona_natural,
-                        persona_juridica: Array.isArray(ocupante.persona_juridica) ? ocupante.persona_juridica[0] ?? null : ocupante.persona_juridica,
-                    } : null,
-                };
-            });
+             // Transform data (if needed, depends on RPC return structure)
+             const transformedData = propertiesData.map((prop: any) => {
+                 // Add any necessary transformations here if the RPC function doesn't return nested objects directly
+                 // This might need adjustment based on your actual RPC function output
+                 return {
+                     ...prop,
+                     // Example: Re-nest if RPC returns flat structure
+                     // propietario: prop.propietario_id ? { id: prop.propietario_id, ... } : null,
+                     // ocupante: prop.ocupante_id ? { id: prop.ocupante_id, ... } : null,
+                 };
+             });
 
             setProperties(prev => pageNum === 0 ? transformedData : [...prev, ...transformedData]);
             setPage(pageNum + 1);
+            // Pagination logic might need adjustment if count isn't returned by RPC
+            // For simplicity, we assume more might exist if we received a full page
             setHasMore(transformedData.length === PROPERTIES_PER_PAGE);
 
         } catch (err: any) {
-            console.error("Error fetching properties:", err);
+            console.error("Error calling RPC buscar_propiedades_proyecto:", err);
             setError(`Error al cargar propiedades: ${err.message}`);
             setHasMore(false);
         } finally {
             setIsLoadingProperties(false);
+            setIsSearching(false); 
         }
     }, [projectId, supabase]);
 
-    // Initial property fetch
+    // Effect to handle debounced search term changes
     useEffect(() => {
-        if (project && properties.length === 0) { // Fetch only if project loaded and properties are empty
-             fetchProperties(0); // Fetch page 0
+        // Trigger search only when project details are loaded and debounced term changes
+        if (project) {
+            console.log(`Searching for: "${debouncedSearchTerm}"`);
+            setProperties([]); // Clear existing properties
+            setPage(0);       // Reset page number
+            setHasMore(true);  // Assume there might be results initially
+            fetchProperties(0, debouncedSearchTerm);
         }
-    }, [project, fetchProperties, properties.length]);
+    }, [debouncedSearchTerm, project, fetchProperties]);
 
     // Render loading state for project
     if (isLoadingProject || isAuthLoading) {
@@ -370,6 +357,21 @@ export default function ProjectDetailPage() {
 
             {/* Properties Section */}
             <div className="space-y-6">
+                 {/* Search Bar - Improved Styling */}
+                 <div className="relative max-w-md"> {/* Adjusted max-width */}
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                         <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                    </div>
+                     <Input
+                        type="text"
+                        placeholder="Buscar por identificador (ej: Bodega 1)..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                         className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 sm:text-sm transition duration-150 ease-in-out"
+                        disabled={isLoadingProperties} // Keep disabled state
+                    />
+                </div>
+
                 <h2 className="text-xl font-semibold text-gray-900">Propiedades del Proyecto</h2>
 
                  {/* Error loading properties */}
@@ -380,41 +382,52 @@ export default function ProjectDetailPage() {
                     </div>
                  )}
 
-                {/* Properties Grid - Use the new Card */}
-                {properties.length > 0 ? (
+                {/* Properties Grid / Loading / No Results */}
+                {(isLoadingProperties && page === 0) || isSearching ? (
+                     // Show skeleton grid when loading initial page or actively searching
+                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                         {[...Array(PROPERTIES_PER_PAGE)].map((_, i) => <SkeletonPropertyCard key={`skel-load-${i}`} />)}
+                     </div>
+                 ) : properties.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                         {properties.map((prop) => (
                             <PropertyCard key={prop.id} property={prop} projectId={projectId} />
                         ))}
-                         {/* Skeleton cards while loading more */}
-                         {isLoadingProperties &&
-                            [...Array(4)].map((_, i) => <SkeletonPropertyCard key={`skel-${i}`} />)
+                         {/* Skeleton cards while loading MORE properties */}
+                         {isLoadingProperties && page > 0 &&
+                            [...Array(4)].map((_, i) => <SkeletonPropertyCard key={`skel-more-${i}`} />)
                          }
                     </div>
-                ) : (
-                    !isLoadingProperties && (
-                        <div className="w-full p-10 text-center text-gray-500 bg-gray-50 rounded-lg border border-gray-200">
-                            <BuildingOffice2Icon className="w-12 h-12 mx-auto text-gray-400 mb-3" />
-                            <h3 className="text-lg font-medium text-gray-800">No hay propiedades</h3>
-                            <p className="text-sm mt-1">Aún no se han añadido propiedades a este proyecto.</p>
-                            {canManageProject && (
-                                <Button variant="outline" className="mt-4" onClick={() => router.push(`/dashboard/proyectos/${projectId}/nueva-propiedad`)}>
-                                    <PlusIcon className="w-4 h-4 mr-2" /> Añadir Propiedad
-                                </Button>
-                            )}
-                        </div>
-                    )
+                 ) : (
+                     // No properties found (either initially or after search)
+                     <div className="w-full p-10 text-center text-gray-500 bg-gray-50 rounded-lg border border-gray-200">
+                        <MagnifyingGlassIcon className="w-12 h-12 mx-auto text-gray-400 mb-3" />
+                        <h3 className="text-lg font-medium text-gray-800">
+                             {debouncedSearchTerm ? "No se encontraron propiedades" : "No hay propiedades"}
+                        </h3>
+                        <p className="text-sm mt-1">
+                             {debouncedSearchTerm
+                                 ? `Intenta con otro término de búsqueda.`
+                                 : "Aún no se han añadido propiedades a este proyecto."
+                             }
+                        </p>
+                         {canManageProject && !debouncedSearchTerm && (
+                            <Button variant="outline" className="mt-4" onClick={() => router.push(`/dashboard/proyectos/${projectId}/propiedades/crear`)}>
+                                <PlusIcon className="w-4 h-4 mr-2" /> Añadir Propiedad
+                            </Button>
+                        )}
+                     </div>
                 )}
 
                 {/* Load More Button / Loading indicator */}
                 <div className="flex justify-center pt-4">
-                    {isLoadingProperties && properties.length > 0 && (
+                    {isLoadingProperties && page > 0 && (
                          <LoadingSpinner size="h-8 w-8" message="Cargando más propiedades..."/>
                     )}
                     {!isLoadingProperties && hasMore && properties.length > 0 && (
                         <Button
                             variant="outline"
-                            onClick={() => fetchProperties(page)}
+                            onClick={() => fetchProperties(page, debouncedSearchTerm)} // Pass debounced term
                             disabled={isLoadingProperties}
                         >
                             Cargar más

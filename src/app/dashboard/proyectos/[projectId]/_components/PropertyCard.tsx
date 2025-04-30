@@ -32,9 +32,7 @@ type Property = {
     estado_uso: string;
     monto_alicuota_ordinaria?: number | null;
     area_total?: number | null; // Added area_total
-    imagen?: {
-        external_url?: string | null;
-    } | null;
+    imagen?: string | null;
     proyecto_id: number;
     propietario_id?: number | null;
     ocupante_id?: number | null;
@@ -88,7 +86,7 @@ const PropertyCard = memo(function PropertyCard({ property, projectId }: Propert
     return property.identificadores?.[tipo] || '';
   };
 
-  const imageUrl = property.imagen?.external_url || "/bodega.png"; // Default image
+  const imageUrl = property.imagen || "/bodega.png"; // Default image
 
   return (
     // Use Link wrapping the motion.div for better semantics

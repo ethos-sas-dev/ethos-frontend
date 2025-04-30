@@ -54,6 +54,11 @@ export const menuItems: Record<UserRole, MenuItems['items']> = {
       href: "/dashboard/propietarios"
     },
     {
+      title: "Clientes",
+      icon: UserGroupIcon,
+      href: "/dashboard/clientes"
+    },
+    {
       title: "Correos",
       icon: EnvelopeIcon,
       href: "/dashboard/correos"
@@ -94,6 +99,11 @@ export const menuItems: Record<UserRole, MenuItems['items']> = {
       title: "Ocupantes y propietarios",
       icon: UserGroupIcon,
       href: "/dashboard/propietarios"
+    },
+    {
+      title: "Clientes",
+      icon: UserGroupIcon,
+      href: "/dashboard/clientes"
     },
     {
       title: "Usuarios",

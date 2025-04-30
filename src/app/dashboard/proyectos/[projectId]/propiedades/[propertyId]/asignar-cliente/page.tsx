@@ -13,6 +13,7 @@ type ClientSearchResult = {
     nombre: string; // Razón social o nombre completo
     identificacion: string; // RUC o Cédula
     tipo: 'Natural' | 'Juridica';
+    rol: string; // Asegurarse de que la RPC devuelve el rol
 };
 
 export default function AssignClientPage() {
@@ -23,7 +24,7 @@ export default function AssignClientPage() {
 
     const projectId = params.projectId as string;
     const propertyId = params.propertyId as string;
-    const roleToAssign = searchParams.get("role") as 'Propietario' | 'Arrendatario' | null; // 'Propietario' or 'Arrendatario'
+    const roleToAssign = searchParams.get("assignRole") as 'Propietario' | 'Ocupante' | null;
 
     const [searchQuery, setSearchQuery] = useState("");
     const [searchResults, setSearchResults] = useState<ClientSearchResult[]>([]);
@@ -34,8 +35,10 @@ export default function AssignClientPage() {
     // --- Validación Inicial ---
     useEffect(() => {
         if (!roleToAssign) {
-            setError("Rol a asignar no especificado en la URL.");
+            setError("Rol a asignar no especificado en la URL (assignRole=Propietario o assignRole=Ocupante).");
             // Podrías redirigir o mostrar un error más permanente aquí
+        } else if (roleToAssign !== 'Propietario' && roleToAssign !== 'Ocupante') {
+            setError(`Rol a asignar inválido: ${roleToAssign}. Debe ser 'Propietario' u 'Ocupante'.`);
         }
         if (!propertyId) {
              setError("ID de propiedad no encontrado.");
@@ -45,35 +48,57 @@ export default function AssignClientPage() {
     // --- Funciones ---
 
     const handleSearch = useCallback(async () => {
-        if (!searchQuery.trim() || !supabase) return;
+        const trimmedQuery = searchQuery.trim();
+        // No buscar si la query está vacía (opcional, la RPC lo maneja pero ahorra llamada)
+        if (!trimmedQuery || !supabase) {
+             setSearchResults([]); // Limpiar resultados si no hay query
+             return;
+        }
         setIsLoading(true);
         setError(null);
         setSearchResults([]);
 
-        console.log(`Buscando clientes con query: "${searchQuery}"`);
+        console.log(`Buscando clientes con query: "${trimmedQuery}" (filtrado frontend por rol: ${roleToAssign})`);
 
         try {
-            // TODO: Implementar lógica de búsqueda en Supabase
-            // Buscar en perfiles_cliente uniéndose a personas_natural y personas_juridica
-            // por RUC, Cédula o Razón Social / Nombre Comercial
-            // Ejemplo MUY simplificado (necesita RPC o query más compleja):
-            const { data, error: dbError } = await supabase
-                .from('perfiles_cliente')
-                .select(`
-                    id,
-                    tipo_persona,
-                    persona_natural:personas_natural!inner(razon_social, cedula, ruc),
-                    persona_juridica:personas_juridica!inner(razon_social, ruc)
-                 `)
-                // .or(`persona_natural.razon_social.ilike.%${searchQuery}%, persona_natural.cedula.eq.${searchQuery}, persona_natural.ruc.eq.${searchQuery}, persona_juridica.razon_social.ilike.%${searchQuery}%, persona_juridica.ruc.eq.${searchQuery}`) // Esto es conceptual, requiere ajuste
-                .limit(10); // Limitar resultados
+            // Llamar a la RPC simplificada (solo con search_term)
+            const { data, error: rpcError } = await supabase.rpc('search_clientes', {
+                search_term_in: trimmedQuery
+                // Ya no pasamos required_role
+            });
 
-            if (dbError) throw dbError;
+            if (rpcError) throw rpcError;
 
-            // TODO: Mapear 'data' al tipo ClientSearchResult
-            console.log("Resultados crudos:", data);
-             setSearchResults([]); // Reemplazar con datos mapeados
+            console.log("Resultados RPC (sin filtrar por rol):", data);
 
+            let finalResults: ClientSearchResult[] = [];
+
+            if (data && data.length > 0) {
+                // Mapear los datos devueltos (la RPC debe devolver 'rol')
+                const mappedResults = data.map((item: any) => ({
+                    id: item.id,
+                    nombre: item.nombre || 'Nombre no disponible',
+                    identificacion: item.identificacion || 'Identificación no disponible',
+                    tipo: item.tipo === 'Natural' || item.tipo === 'Juridica' ? item.tipo : 'Natural',
+                    rol: item.rol // Asegurarse de que la RPC devuelve el rol
+                }));
+
+                // --- Filtrado Frontend --- 
+                if (roleToAssign === 'Propietario') {
+                    finalResults = mappedResults.filter((client: ClientSearchResult) => client.rol === 'Propietario');
+                } else if (roleToAssign === 'Ocupante') {
+                    finalResults = mappedResults.filter((client: ClientSearchResult) => client.rol === 'Arrendatario' || client.rol === 'Externo');
+                } else {
+                    finalResults = mappedResults; // Si no hay rol especificado, mostrar todo (o manejar error)
+                }
+
+                console.log(`Resultados después de filtrar por rol '${roleToAssign}':`, finalResults);
+
+            } else {
+                 console.log("No se recibieron datos o el array está vacío desde la RPC.");
+            }
+            
+            setSearchResults(finalResults); // Actualizar estado con resultados filtrados
 
         } catch (err: any) {
             console.error("Error buscando clientes:", err);
@@ -81,7 +106,7 @@ export default function AssignClientPage() {
         } finally {
             setIsLoading(false);
         }
-    }, [searchQuery, supabase]);
+    }, [searchQuery, supabase, roleToAssign]);
 
     const handleAssignClient = async (clientId: number) => {
          if (!propertyId || !roleToAssign || !supabase) {
@@ -94,18 +119,63 @@ export default function AssignClientPage() {
          console.log(`Asignando cliente ${clientId} como ${roleToAssign} a la propiedad ${propertyId}`);
 
          try {
-            // Determinar el campo a actualizar en la tabla 'propiedades'
+            // Determinar el campo a actualizar
             const fieldToUpdate = roleToAssign === 'Propietario' ? 'propietario_id' : 'ocupante_id';
+            let updates: { [key: string]: any } = { [fieldToUpdate]: clientId };
 
+            // Si asignamos Ocupante, aseguramos que ocupante_externo sea false
+            // (Aunque el rol del cliente asignado debería definir esto visualmente)
+            if (roleToAssign === 'Ocupante') {
+                 updates.ocupante_externo = false;
+            }
+
+            // --- Paso 1: Asignar el rol principal ---
             const { error: updateError } = await supabase
                 .from('propiedades')
-                .update({ [fieldToUpdate]: clientId })
-                .eq('id', propertyId);
+                .update(updates)
+                .eq('id', propertyId)
+                .select('ocupante_id') // Seleccionar ocupante_id para el siguiente paso
+                .single(); // Usar single() si esperamos una sola fila actualizada
 
             if (updateError) throw updateError;
 
-            console.log("Asignación exitosa.");
-            // Redirigir de vuelta a la página de detalles de la propiedad
+            console.log(`Asignación principal de ${roleToAssign} exitosa.`);
+
+            // --- Paso 2: Si se asignó Propietario, verificar y asignar Ocupante si está vacío ---
+            if (roleToAssign === 'Propietario') {
+                // Necesitamos obtener el estado MÁS RECIENTE de ocupante_id *después* de la actualización anterior.
+                // La data devuelta por .update().select() podría no ser la más fresca en todos los casos,
+                // así que una re-consulta es más segura.
+                 console.log("Verificando si se debe auto-asignar como ocupante...");
+                 const { data: currentProperty, error: fetchError } = await supabase
+                     .from('propiedades')
+                    .select('ocupante_id')
+                    .eq('id', propertyId)
+                    .maybeSingle(); // Usar maybeSingle para manejar si la propiedad no se encuentra (poco probable aquí)
+
+                 if (fetchError) {
+                     console.warn("Advertencia: No se pudo verificar el ocupante actual después de asignar propietario:", fetchError.message);
+                     // Continuar con la redirección, la asignación principal funcionó.
+                 } else if (currentProperty && currentProperty.ocupante_id === null) {
+                    console.log(`Propiedad ${propertyId} no tiene ocupante. Asignando propietario ${clientId} como ocupante...`);
+                    const { error: occupantUpdateError } = await supabase
+                        .from('propiedades')
+                        .update({ ocupante_id: clientId })
+                        .eq('id', propertyId);
+
+                    if (occupantUpdateError) {
+                         console.warn(`Advertencia: Propietario asignado, pero falló la auto-asignación como ocupante:`, occupantUpdateError.message);
+                         // Continuar, pero quizás mostrar un mensaje sutil.
+                     } else {
+                         console.log("Auto-asignación como ocupante exitosa.");
+                     }
+                } else {
+                    console.log("La propiedad ya tiene un ocupante o no se pudo verificar. No se auto-asignará.");
+                }
+            }
+
+             // --- Paso 3: Redirección ---
+             console.log("Redirigiendo a la página de la propiedad...");
              router.push(`/dashboard/proyectos/${projectId}/propiedades/${propertyId}`);
             // Opcional: mostrar un mensaje de éxito antes de redirigir
 
@@ -118,13 +188,10 @@ export default function AssignClientPage() {
      };
 
      const handleCreateNewClient = () => {
-         // Navegar a una página de creación, pasando el contexto
-         // Idealmente, la página de creación devolverá el ID del nuevo cliente
-         // o esta página necesitará re-consultar después de la creación.
-         // Por ahora, solo navegamos.
-         // Necesitaremos pasar propertyId y roleToAssign para que el formulario sepa
-         // que debe asignar automáticamente después de crear.
-          router.push(`/dashboard/clientes/crear?assignToProperty=${propertyId}&assignRole=${roleToAssign}&redirectTo=/dashboard/proyectos/${projectId}/propiedades/${propertyId}`);
+         // Asegurarse de pasar el roleToAssign correcto a la página de creación
+         const creationUrl = `/dashboard/clientes/crear?assignToProperty=${propertyId}&assignRole=${roleToAssign}&redirectTo=/dashboard/proyectos/${projectId}/propiedades/${propertyId}`;
+         console.log("Navegando a crear nuevo cliente:", creationUrl);
+         router.push(creationUrl);
       };
 
 
@@ -137,7 +204,7 @@ export default function AssignClientPage() {
                     <ArrowLeftIcon className="h-5 w-5" />
                 </Button>
                  <h1 className="text-xl md:text-2xl font-semibold">
-                     Asignar {roleToAssign || 'Cliente'} a Propiedad {propertyId}
+                     Asignar {roleToAssign === 'Ocupante' ? 'Ocupante (Arrendatario/Externo)' : (roleToAssign || 'Cliente')} a Propiedad {propertyId}
                  </h1>
                  <div className="w-8"></div> {/* Spacer */}
              </div>
@@ -179,8 +246,8 @@ export default function AssignClientPage() {
                      <ul className="space-y-2">
                         {searchResults.map((client) => (
                             <li key={client.id} className="flex justify-between items-center p-3 border rounded-md hover:bg-gray-50">
-                                <div>
-                                    <p className="font-medium">{client.nombre}</p>
+                                <div className="flex-grow mr-4 overflow-hidden">
+                                    <p className="font-medium truncate" title={client.nombre}>{client.nombre}</p>
                                     <p className="text-sm text-gray-500">{client.tipo} - {client.identificacion}</p>
                                  </div>
                                 <Button
@@ -197,7 +264,7 @@ export default function AssignClientPage() {
                      </ul>
                  ) : (
                      <p className="text-sm text-gray-500 text-center py-4">
-                         {searchQuery.trim() ? "No se encontraron clientes." : "Ingrese un término de búsqueda."}
+                         {searchQuery.trim() ? `No se encontraron clientes ${roleToAssign === 'Ocupante' ? 'de tipo Arrendatario o Externo' : 'de tipo Propietario'}.` : "Ingrese un término de búsqueda."}
                      </p>
                  )}
              </div>
@@ -207,7 +274,7 @@ export default function AssignClientPage() {
                  <p className="text-sm text-gray-600 mb-2">¿No encuentras al cliente?</p>
                  <Button variant="outline" onClick={handleCreateNewClient} disabled={isLoading || isAssigning}>
                      <UserPlusIcon className="h-5 w-5 mr-2" />
-                    Crear Cliente Nuevo y Asignar
+                    Crear Nuevo {roleToAssign === 'Ocupante' ? 'Ocupante' : 'Propietario'} y Asignar
                  </Button>
              </div>
         </div>
