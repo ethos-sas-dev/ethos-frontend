@@ -661,13 +661,13 @@ export function PropertyForm({
                     <div>
                         <p className="text-gray-600">Fondo Inicial Calculado</p>
                         <p className="font-semibold text-lg mt-0.5">
-                            ${formatNumber(calculateMontos().montoFondoInicial ?? 0)}
+                            ${formatNumber(calculateMontos().montoFondoInicial ?? 0, true)}
                         </p>
                     </div>
                     <div>
                         <p className="text-gray-600">Alícuota Ordinaria Calculada</p>
                         <p className="font-semibold text-lg mt-0.5">
-                            ${formatNumber(calculateMontos().montoAlicuotaOrdinaria ?? 0)}
+                            ${formatNumber(calculateMontos().montoAlicuotaOrdinaria ?? 0, true)}
                         </p>
                     </div>
                 </div>

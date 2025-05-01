@@ -75,6 +75,35 @@ export const ourFileRouter = {
         contentType: metadata.contentType
       };
     }),
+
+  // >>> AÑADIR NUEVO ENDPOINT PARA DOCUMENTOS DE CLIENTE <<<
+  clientDocument: f({
+    pdf: { maxFileSize: "4MB", maxFileCount: 1 },
+    // Podrías añadir otros tipos si es necesario (jpg, png, etc.)
+    // image: { maxFileSize: "4MB", maxFileCount: 1 }, 
+  })
+    .middleware(async ({ req }) => {
+      // Usar la misma autenticación placeholder por ahora
+      // !!! REEMPLAZAR CON AUTENTICACIÓN REAL DE SUPABASE !!!
+      const user = await auth(req); 
+      if (!user || !user.id) throw new UploadThingError("Unauthorized");
+      
+      // Podrías pasar metadata adicional si la necesitas en onUploadComplete
+      // const clientId = req.headers.get("x-client-id"); 
+      // return { userId: user.id, clientId };
+      return { userId: user.id }; 
+    })
+    .onUploadComplete(async ({ metadata, file }) => {
+      console.log("[ClientDoc] Upload complete for userId:", metadata.userId);
+      console.log("[ClientDoc] file url:", file.url);
+      console.log("[ClientDoc] file key:", file.key);
+      
+      // Por ahora, solo devolvemos la información básica.
+      // La lógica de crear el registro en 'archivos' y actualizar 
+      // 'personas_*', etc., se hará en el frontend (EditClientPage handleSubmit)
+      // O podrías mover esa lógica aquí si prefieres, pero requiere más metadata.
+      return { uploadedBy: metadata.userId, fileKey: file.key };
+    }),
 } satisfies FileRouter;
 
 export type OurFileRouter = typeof ourFileRouter; 

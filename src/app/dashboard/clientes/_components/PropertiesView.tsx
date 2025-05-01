@@ -1,10 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createClient } from  '../../../../../lib/supabase/client'; // Ruta corregida basada en page.tsx
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../_components/ui/table"; 
 import { Card, CardContent, CardHeader, CardTitle } from "../../../_components/ui/card";
 import { Skeleton } from "../../../_components/ui/skeleton";
+import { Input } from "../../../_components/ui/input";
+import { MagnifyingGlassIcon, ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/20/solid";
+import { useDebounce } from '@uidotdev/usehooks';
 // import { supabase } from '../../../../../lib/supabaseClient'; // Eliminar si createClient funciona
 
 // Tipos para los datos (simplificado, ajustar según necesidad)
@@ -127,6 +130,9 @@ export default function PropertiesView() {
   const [projectsData, setProjectsData] = useState<Proyecto[]>([]);
   const [loading, setLoading] = useState(true); // Reactivar loading inicial
   const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState(""); // Estado para la búsqueda
+  const debouncedSearchTerm = useDebounce(searchTerm, 300); // Debounce para la búsqueda
+  const [expandedProjects, setExpandedProjects] = useState<Record<number, boolean>>({}); // Estado para controlar qué proyectos están expandidos
   const supabase = createClient(); // Usar cliente inicializado
 
   useEffect(() => {
@@ -186,6 +192,11 @@ export default function PropertiesView() {
           propiedades: p.propiedades || []
         })) || [];
         setProjectsData(processedData);
+        // Por defecto, todos los proyectos empiezan expandidos
+        setExpandedProjects(processedData.reduce((acc, p) => {
+            acc[p.id] = true;
+            return acc;
+        }, {} as Record<number, boolean>));
       }
       setLoading(false);
     };
@@ -194,8 +205,61 @@ export default function PropertiesView() {
 
   }, [supabase]); // Añadir supabase como dependencia
 
+  // Función para alternar la expansión de un proyecto
+  const toggleProjectExpansion = (projectId: number) => {
+    setExpandedProjects(prev => ({
+      ...prev,
+      [projectId]: !prev[projectId]
+    }));
+  };
+
+  // Filtrar datos basados en el término de búsqueda debounced
+  const filteredProjectsData = useMemo(() => {
+    if (!debouncedSearchTerm) {
+      return projectsData; // Si no hay búsqueda, devolver todos los datos
+    }
+    const lowerCaseSearchTerm = debouncedSearchTerm.toLowerCase().trim();
+    if (!lowerCaseSearchTerm) return projectsData;
+
+    return projectsData.map(project => {
+      const filteredProperties = project.propiedades.filter(prop => {
+        const propietarioDetails = getClientDetails(prop.propietario);
+        const ocupanteDetails = getClientDetails(prop.ocupante);
+        const propiedadIdentifier = formatPropertyIdentifier(prop);
+
+        return (
+          propiedadIdentifier.toLowerCase().includes(lowerCaseSearchTerm) ||
+          propietarioDetails.nombre.toLowerCase().includes(lowerCaseSearchTerm) ||
+          (propietarioDetails.identificacion.valor && propietarioDetails.identificacion.valor.toLowerCase().includes(lowerCaseSearchTerm)) ||
+          ocupanteDetails.nombre.toLowerCase().includes(lowerCaseSearchTerm) ||
+          (ocupanteDetails.identificacion.valor && ocupanteDetails.identificacion.valor.toLowerCase().includes(lowerCaseSearchTerm))
+        );
+      });
+
+      // Devolver el proyecto solo si tiene propiedades que coinciden o si el nombre del proyecto coincide
+      if (filteredProperties.length > 0 || project.nombre.toLowerCase().includes(lowerCaseSearchTerm)) {
+          return { ...project, propiedades: filteredProperties };
+      }
+      return null; // Si no hay coincidencias en este proyecto, se excluye
+    }).filter((project): project is Proyecto => project !== null); // Filtrar los proyectos nulos
+  }, [debouncedSearchTerm, projectsData]);
+
   return (
     <div className="space-y-4 mt-4">
+      {/* Barra de búsqueda */}
+      <div className="relative max-w-md">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+          </div>
+          <Input
+              type="text"
+              placeholder="Buscar por proyecto, propiedad, propietario u ocupante..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 sm:text-sm transition duration-150 ease-in-out"
+          />
+      </div>
+
       {loading && (
         <div className="space-y-4">
           <Skeleton className="h-10 w-1/4" />
@@ -205,15 +269,31 @@ export default function PropertiesView() {
         </div>
       )}
       {error && <p className="text-red-600 bg-red-100 p-3 rounded-md">{error}</p>}
-      {!loading && !error && projectsData.length === 0 && (
-        <p className="text-gray-500">No se encontraron proyectos o propiedades.</p> // Mensaje actualizado
+      {!loading && !error && filteredProjectsData.length === 0 && (
+        <p className="text-gray-500">
+          {debouncedSearchTerm ? "No se encontraron resultados para tu búsqueda." : "No se encontraron proyectos o propiedades."}
+        </p>
       )}
-      {!loading && !error && projectsData.map((proyecto) => (
+      {!loading && !error && filteredProjectsData.map((proyecto) => (
         <Card key={proyecto.id} className="overflow-hidden">
-          <CardHeader className="bg-gray-50 border-b">
-            <CardTitle className="text-lg font-medium text-gray-700 px-4 py-3">{proyecto.nombre}</CardTitle>
+          {/* Hacer el header clickeable para colapsar/expandir */}
+          <CardHeader
+            className="bg-gray-50 border-b cursor-pointer hover:bg-gray-100 transition-colors flex flex-row justify-between items-center px-4 py-3"
+            onClick={() => toggleProjectExpansion(proyecto.id)}
+            aria-expanded={expandedProjects[proyecto.id] ?? true} // Default a true si no está en el estado
+          >
+            <CardTitle className="text-lg font-medium text-gray-700">{proyecto.nombre}</CardTitle>
+            {/* Icono de flecha para indicar estado */}
+            {expandedProjects[proyecto.id] ? (
+                 <ChevronUpIcon className="w-5 h-5 text-gray-500" />
+             ) : (
+                 <ChevronDownIcon className="w-5 h-5 text-gray-500" />
+             )}
           </CardHeader>
+          {/* Renderizar el contenido solo si está expandido */}
+          {(expandedProjects[proyecto.id] ?? true) && ( // Default a true si no está en el estado
           <CardContent className="p-0">
+              {/* Mostrar propiedades filtradas */}
             {proyecto.propiedades.length > 0 ? (
               <Table>
                 <TableHeader>
@@ -273,10 +353,13 @@ export default function PropertiesView() {
                   })}
                 </TableBody>
               </Table>
+              ) : debouncedSearchTerm ? (
+                   <p className="p-4 text-sm text-gray-500">No se encontraron propiedades que coincidan con la búsqueda en este proyecto.</p>
             ) : (
               <p className="p-4 text-sm text-gray-500">Este proyecto no tiene propiedades registradas.</p>
             )}
           </CardContent>
+          )}
         </Card>
       ))}
     </div>

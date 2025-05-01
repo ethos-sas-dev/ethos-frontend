@@ -1,10 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createClient } from  '../../../../../lib/supabase/client';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../_components/ui/table";
 import { Button } from "../../../_components/ui/button";
 import { Skeleton } from "../../../_components/ui/skeleton";
+import { Input } from "../../../_components/ui/input";
+import { MagnifyingGlassIcon } from "@heroicons/react/20/solid";
+import { useDebounce } from '@uidotdev/usehooks';
 import { PencilSquareIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/navigation'; // Para navegación futura
 import { Card } from '@/app/_components/ui/card';
@@ -71,6 +74,8 @@ export default function AllClientsView() {
   const [clients, setClients] = useState<ClienteListing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const supabase = createClient();
   const router = useRouter(); // Hook para navegación
 
@@ -111,11 +116,29 @@ export default function AllClientsView() {
     fetchData();
   }, [supabase]);
 
+  // Filtrar clientes basados en el término de búsqueda
+  const filteredClients = useMemo(() => {
+    const lowerCaseSearchTerm = debouncedSearchTerm.toLowerCase().trim();
+    if (!lowerCaseSearchTerm) {
+      return clients; // Devolver todos si no hay búsqueda
+    }
+
+    return clients.filter(client => {
+      const details = getClientDetails(client);
+      return (
+        details.nombre.toLowerCase().includes(lowerCaseSearchTerm) ||
+        (details.identificacion.valor && details.identificacion.valor.toLowerCase().includes(lowerCaseSearchTerm))
+        // Podríamos añadir búsqueda por rol si fuera necesario
+        // || details.rol?.toLowerCase().includes(lowerCaseSearchTerm)
+      );
+    });
+  }, [debouncedSearchTerm, clients]);
+
   const handleEdit = (clientId: number) => {
-    console.log("Editar cliente con ID:", clientId);
-    // TODO: Navegar a la página de edición cuando exista
-    // router.push(`/dashboard/clientes/${clientId}/editar`);
-    alert(`Funcionalidad de editar cliente ${clientId} pendiente.`);
+    console.log("Navegando a editar cliente con ID:", clientId);
+    router.push(`/dashboard/clientes/${clientId}/editar`);
+    // Comentamos el alert anterior
+    // alert(`Funcionalidad de editar cliente ${clientId} pendiente.`);
   };
 
   // Helper para color del rol (similar a PropertiesView)
@@ -129,7 +152,21 @@ export default function AllClientsView() {
   };
 
   return (
-    <div className="mt-4">
+    <div className="mt-4 space-y-4">
+       {/* Barra de búsqueda */}
+       <div className="relative max-w-md"> 
+           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+               <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+           </div>
+           <Input
+               type="text"
+               placeholder="Buscar por nombre, razón social o identificación..."
+               value={searchTerm}
+               onChange={(e) => setSearchTerm(e.target.value)}
+               className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 sm:text-sm transition duration-150 ease-in-out"
+           />
+       </div>
+
       {loading && (
         <div className="space-y-2">
           <Skeleton className="h-10 w-full" />
@@ -152,14 +189,14 @@ export default function AllClientsView() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {clients.length === 0 ? (
+              {filteredClients.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center text-gray-500 py-10 px-4">
-                    No se encontraron clientes.
+                     {debouncedSearchTerm ? "No se encontraron clientes que coincidan con la búsqueda." : "No se encontraron clientes."}
                   </TableCell>
                 </TableRow>
               ) : (
-                clients.map((client) => {
+                filteredClients.map((client) => {
                   const details = getClientDetails(client);
                   return (
                     <TableRow key={client.id} className="text-sm hover:bg-gray-50">

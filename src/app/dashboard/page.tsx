@@ -244,33 +244,33 @@ const DirectorioDashboard = () => {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-semibold mb-2">Panel Ejecutivo</h1>
-        <p className="text-gray-500">Visualización de KPIs y métricas de negocio</p>
+        <h1 className="text-3xl font-semibold mb-2">Panel Directorio</h1>
+        <p className="text-gray-500">Bienvenido al panel directorio de Ethos</p>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard title="Proyectos activos" value={stats.proyectos} icon={BuildingOffice2Solid} iconColor="bg-emerald-600" href="/dashboard/proyectos" />
         <StatCard title="Clientes totales" value={stats.clientes} icon={UserGroupSolid} iconColor="bg-blue-600" href="/dashboard/propietarios" />
         <StatCard title="Ingresos (Mes)" value={stats.ingresos} icon={CurrencyDollarSolid} iconColor="bg-amber-600" href="/dashboard/facturacion-cobranza" />
-        <StatCard title="Egresos (Mes)" value={stats.egresos} icon={CurrencyDollarSolid} iconColor="bg-purple-600" href="/dashboard/facturacion-cobranza" />
+        {/* <StatCard title="Egresos (Mes)" value={stats.egresos} icon={CurrencyDollarSolid} iconColor="bg-purple-600" href="/dashboard/facturacion-cobranza" /> */}
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div className="bg-white rounded-xl shadow-sm p-6 lg:col-span-2">
+        {/* <div className="bg-white rounded-xl shadow-sm p-6 lg:col-span-2">
           <h2 className="text-xl font-semibold mb-4">Resumen financiero</h2>
           <div className="h-64 w-full bg-gray-100 rounded-lg flex items-center justify-center">
             <p className="text-gray-500">Gráfico de ingresos y egresos (placeholder)</p>
           </div>
-        </div>
+        </div> */}
         
-        <div className="bg-white rounded-xl shadow-sm p-6">
+        {/* <div className="bg-white rounded-xl shadow-sm p-6">
           <h2 className="text-xl font-semibold mb-4">Reportes ejecutivos</h2>
           <div className="space-y-4">
             <ActionCard title="Informe mensual" description="Resumen completo de operaciones y finanzas" icon={DocumentTextIcon} bgColor="bg-blue-50" href="/dashboard/reportes/mensual" />
             <ActionCard title="Estado de proyectos" description="Avance y estado de todos los proyectos activos" icon={BuildingOffice2Icon} bgColor="bg-emerald-50" href="/dashboard/reportes/proyectos" />
             <ActionCard title="Previsión financiera" description="Proyecciones de ingresos y egresos" icon={CurrencyDollarIcon} bgColor="bg-amber-50" href="/dashboard/reportes/prevision" />
           </div>
-        </div>
+        </div> */}
       </div>
     </div>
   )

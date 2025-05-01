@@ -1186,7 +1186,7 @@ export default function PropertyDetailPage() {
                           <div className="flex justify-between items-center mb-4">
                               <h2 className="text-lg font-semibold">Ocupante</h2>
                                {/* Dropdown para gestionar ocupante (solo Admins) */}
-                               {isAdmin && (
+                               {(isAdmin || isDirectorio) && (
                                    <DropdownMenu>
                                        <DropdownMenuTrigger asChild>
                                            <Button

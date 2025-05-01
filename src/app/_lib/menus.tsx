@@ -27,9 +27,9 @@ export const menuItems: Record<UserRole, MenuItems['items']> = {
       href: "/dashboard/proyectos"
     },
     {
-      title: "Ocupantes y propietarios",
+      title: "Clientes",
       icon: UserGroupIcon,
-      href: "/dashboard/propietarios"
+      href: "/dashboard/clientes"
     },
     {
       title: "Reportes",
@@ -49,9 +49,9 @@ export const menuItems: Record<UserRole, MenuItems['items']> = {
       href: "/dashboard/proyectos"
     },
     {
-      title: "Ocupantes y propietarios",
+      title: "Clientes",
       icon: UserGroupIcon,
-      href: "/dashboard/propietarios"
+      href: "/dashboard/clientes"
     },
     {
       title: "Clientes",
@@ -94,11 +94,6 @@ export const menuItems: Record<UserRole, MenuItems['items']> = {
       title: "Proyectos",
       icon: BuildingOffice2Icon,
       href: "/dashboard/proyectos"
-    },
-    {
-      title: "Ocupantes y propietarios",
-      icon: UserGroupIcon,
-      href: "/dashboard/propietarios"
     },
     {
       title: "Clientes",

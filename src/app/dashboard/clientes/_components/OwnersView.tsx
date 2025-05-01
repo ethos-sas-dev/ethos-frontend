@@ -1,9 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createClient } from  '../../../../../lib/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from "../../../_components/ui/card";
 import { Skeleton } from "../../../_components/ui/skeleton";
+import { Input } from "../../../_components/ui/input";
+import { MagnifyingGlassIcon } from "@heroicons/react/20/solid";
+import { useDebounce } from '@uidotdev/usehooks';
 import Link from 'next/link';
 import { ArrowTopRightOnSquareIcon } from '@heroicons/react/20/solid';
 import { BuildingOfficeIcon } from '@heroicons/react/24/outline';
@@ -103,6 +106,8 @@ export default function OwnersView() {
   const [ownersData, setOwnersData] = useState<OwnerWithProperties[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const supabase = createClient();
 
   useEffect(() => {
@@ -187,8 +192,38 @@ export default function OwnersView() {
     fetchData();
   }, [supabase]);
 
+  // Filtrar datos basados en el término de búsqueda debounced
+  const filteredOwnersData = useMemo(() => {
+    const lowerCaseSearchTerm = debouncedSearchTerm.toLowerCase().trim();
+    if (!lowerCaseSearchTerm) {
+      return ownersData; // Devolver todos si no hay búsqueda
+    }
+
+    return ownersData.filter(owner => {
+      const ownerDetails = getOwnerClientDetails(owner);
+      return (
+        ownerDetails.nombre.toLowerCase().includes(lowerCaseSearchTerm) ||
+        (ownerDetails.identificacion.valor && ownerDetails.identificacion.valor.toLowerCase().includes(lowerCaseSearchTerm))
+      );
+    });
+  }, [debouncedSearchTerm, ownersData]);
+
   return (
     <div className="space-y-4 mt-4">
+      {/* Barra de búsqueda */}
+      <div className="relative max-w-md mb-4">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+          </div>
+          <Input
+              type="text"
+              placeholder="Buscar por nombre, razón social o identificación..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 sm:text-sm transition duration-150 ease-in-out"
+          />
+      </div>
+
       {/* ... Loading Skeleton ... */}
       {loading && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -197,14 +232,16 @@ export default function OwnersView() {
       )}
       {/* ... Error Message ... */}
       {error && <p className="text-red-600 bg-red-100 p-3 rounded-md">{error}</p>}
-      {/* ... No Data Message ... */}
-      {!loading && !error && ownersData.length === 0 && (
-        <p className="text-gray-500 text-center py-10">No se encontraron propietarios.</p>
+      {/* ... No Data Message (Actualizado) ... */}
+      {!loading && !error && filteredOwnersData.length === 0 && (
+         <p className="text-gray-500 text-center py-10">
+           {debouncedSearchTerm ? "No se encontraron propietarios que coincidan con la búsqueda." : "No se encontraron propietarios."}
+         </p>
       )}
-      {/* ... Owners Grid ... */}
-      {!loading && !error && (
+      {/* ... Owners Grid (Usa filteredOwnersData) ... */}
+      {!loading && !error && filteredOwnersData.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {ownersData.map((owner) => {
+          {filteredOwnersData.map((owner) => {
             const ownerDetails = getOwnerClientDetails(owner);
             return (
               <Card key={owner.id} className="overflow-hidden flex flex-col">

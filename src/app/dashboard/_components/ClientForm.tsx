@@ -15,12 +15,14 @@ import { Switch } from "../../_components/ui/switch"; // Ajustar ruta
 import { RadioGroup, RadioGroupItem } from "../../_components/ui/radio-group"; // Para Natural/Juridica
 import { UploadButton } from "@uploadthing/react"; // Assuming UploadButton is needed
 import type { OurFileRouter } from "../../api/uploadthing/core"; // Adjust path if needed
-import { ExclamationTriangleIcon, DocumentCheckIcon, ArrowUpCircleIcon } from "@heroicons/react/24/outline";
+import { ExclamationTriangleIcon, DocumentCheckIcon, ArrowUpCircleIcon, LinkIcon, ArrowPathIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { motion } from "framer-motion";
+import get from 'lodash/get'; // Importar lodash.get para acceso anidado seguro
+import set from 'lodash/set'; // Importar lodash.set para actualización anidada segura
 // --- Tipos (Basados en SCHEMA.MD - Simplificados por ahora) ---
 
 // Tipos para los datos específicos de persona
-type PersonaNaturalData = {
+export type PersonaNaturalData = {
     id?: number;
     aplica_ruc?: boolean;
     razon_social?: string; // Nombre completo
@@ -32,7 +34,7 @@ type PersonaNaturalData = {
 };
 
 // Nuevo tipo para Empresa Representada
-type EmpresaRepresentadaData = {
+export type EmpresaRepresentadaData = {
     id?: number;
     razon_social?: string; // Razón social de la empresa representante
     ruc?: string;          // RUC de la empresa representante
@@ -44,7 +46,7 @@ type EmpresaRepresentadaData = {
     cedula_representante_persona_natural_pdf_id?: number | null; // PDF Cédula de la persona natural representante
 };
 
-type PersonaJuridicaData = {
+export type PersonaJuridicaData = {
     id?: number;
     razon_social?: string;
     nombre_comercial?: string;
@@ -62,7 +64,7 @@ type PersonaJuridicaData = {
 };
 
 // Tipo para Contactos (Simplificado)
-type ContactoData = {
+export type ContactoData = {
     nombre?: string;
     email?: string;
     telefono?: string;
@@ -89,9 +91,13 @@ type PendingUpload = {
     url: string; // ufsUrl from UploadThing response
     key: string; // key from UploadThing response
 };
-type PendingUploadsState = {
+// Exportar este tipo
+export type PendingUploadsState = {
     [docType: string]: PendingUpload | null; // e.g., { cedula_pdf_id: { name: '...', url: '...', key: '...' } }
 };
+
+// Tipo para el objeto archivo esperado en formData (viene de EditClientPage)
+type ArchivoInfo = { id: number; filename: string | null; external_url: string | null } | null;
 
 // --- Props del Componente ---
 interface ClientFormProps {
@@ -123,6 +129,11 @@ const defaultPersonaJuridica: PersonaJuridicaData = {
 
 const defaultEmpresaRepresentada: EmpresaRepresentadaData = {};
 
+// --- Spinner Componente Simple ---
+const MiniSpinner = () => (
+    <ArrowPathIcon className="h-4 w-4 animate-spin text-gray-500" />
+);
+
 // --- Componente ---
 export function ClientForm({
     initialData,
@@ -136,7 +147,8 @@ export function ClientForm({
     const [formData, setFormData] = useState<ClientFormData>(() => initializeFormData(initialData));
     const [pendingUploads, setPendingUploads] = useState<PendingUploadsState>({});
     const [error, setError] = useState<string | null>(null);
-    const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({}); // Errors per upload button
+    const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
+    const [isUploading, setIsUploading] = useState<Record<string, boolean>>({}); // <<< Nuevo estado para carga
 
     // --- Helper para inicializar estado ---
     function initializeFormData(initData: Partial<ClientFormData>): ClientFormData {
@@ -179,6 +191,7 @@ export function ClientForm({
          setPendingUploads({}); // Reset pending uploads when initial data changes
          setError(null);
          setUploadErrors({});
+         setIsUploading({}); // <<< Resetear estado de carga
      }, [initialData]);
 
     // --- Handlers ---
@@ -260,29 +273,49 @@ export function ClientForm({
         });
     };
 
-     // --- Handlers for Upload ---
-     const handleUploadComplete = (docType: string, res: any[]) => {
+     // --- Handlers for Upload (Actualizados) ---
+     const handleUploadBegin = (docTypeKey: string) => {
+        console.log(`[UploadBegin] for ${docTypeKey}`);
+        setIsUploading(prev => ({ ...prev, [docTypeKey]: true }));
+        setUploadErrors(prev => ({ ...prev, [docTypeKey]: '' })); // Limpiar error anterior al reintentar
+        setPendingUploads(prev => ({ ...prev, [docTypeKey]: null })); // Limpiar pendiente anterior si se reintenta
+    };
+
+    const handleUploadComplete = (docTypeKey: string, res: any[]) => {
+        console.log(`[UploadComplete] for ${docTypeKey}`);
+        setIsUploading(prev => ({ ...prev, [docTypeKey]: false })); // <<< Finaliza carga
         if (res && res.length > 0) {
             const file = res[0];
             const newUpload: PendingUpload = {
                 name: file.name,
-                url: file.url, // Use 'url' which usually maps to ufsUrl
+                url: file.url,
                 key: file.key
             };
-            setPendingUploads(prev => ({ ...prev, [docType]: newUpload }));
-            setUploadErrors(prev => ({ ...prev, [docType]: '' })); // Clear error on success
-            console.log(`Upload successful for ${docType}:`, newUpload);
+            setPendingUploads(prev => ({ ...prev, [docTypeKey]: newUpload }));
+            setUploadErrors(prev => ({ ...prev, [docTypeKey]: '' })); 
+            console.log(`Upload successful for ${docTypeKey}:`, newUpload);
         } else {
-             console.error(`Upload for ${docType} completed but no result found.`);
-             setUploadErrors(prev => ({ ...prev, [docType]: 'Respuesta de subida inválida.' }));
-             setPendingUploads(prev => ({ ...prev, [docType]: null })); // Clear pending upload on error
+            console.error(`Upload for ${docTypeKey} completed but no result found.`);
+            setUploadErrors(prev => ({ ...prev, [docTypeKey]: 'Respuesta de subida inválida.' }));
+            setPendingUploads(prev => ({ ...prev, [docTypeKey]: null }));
         }
     };
 
-    const handleUploadError = (docType: string, error: Error) => {
-        console.error(`Upload Error for ${docType}: ${error.message}`);
-        setUploadErrors(prev => ({ ...prev, [docType]: error.message || 'Error desconocido.' }));
-        setPendingUploads(prev => ({ ...prev, [docType]: null })); // Clear pending upload on error
+    const handleUploadError = (docTypeKey: string, error: Error) => {
+        console.error(`[UploadError] for ${docTypeKey}:`, error);
+        setIsUploading(prev => ({ ...prev, [docTypeKey]: false })); // <<< Finaliza carga (con error)
+        setPendingUploads(prev => ({ ...prev, [docTypeKey]: null })); // Limpiar pendiente en error
+
+        let friendlyMessage = error.message || 'Error desconocido al subir.';
+        // <<< Mejorar mensaje para errores comunes
+        if (error.message.includes('FileSizeMismatch') || error.message.includes('maximum file size')) {
+            friendlyMessage = 'El archivo excede el tamaño máximo permitido (4MB).';
+        } else if (error.message.includes('Invalid file type')) {
+            friendlyMessage = 'Tipo de archivo no permitido. Intente con PDF o imagen.'; // Ajustar según tipos permitidos
+        }
+        // Añadir más condiciones si identificas otros errores comunes
+
+        setUploadErrors(prev => ({ ...prev, [docTypeKey]: friendlyMessage }));
     };
 
      // Handler para Select (simplificado)
@@ -325,34 +358,131 @@ export function ClientForm({
         }
     };
 
-    // --- Helper para renderizar estado de subida ---
-    const renderUploadStatus = (docType: string, docName: string) => {
-        const pending = pendingUploads[docType];
-        // TODO: Determinar el ID existente basado en `formData` y `docType` para modo edición
-        // const existingDocId = formData.persona_natural?.cedula_pdf_id; // Ejemplo conceptual
+    // --- Handler para Cancelar Subida Pendiente ---
+    const handleCancelPendingUpload = (docTypeKey: string) => {
+        console.log(`[CancelPending] for ${docTypeKey}`);
+        // Limpiar estado de pendiente y error
+        setPendingUploads(prev => ({ ...prev, [docTypeKey]: null }));
+        setUploadErrors(prev => ({ ...prev, [docTypeKey]: '' }));
+        // También limpiar el campo del archivo en formData para asegurar que se guarde NULL
+        const objectPath = getPathForDocType(docTypeKey); // Reutilizamos getPathForDocType
+        if (objectPath) {
+            const newState = structuredClone(formData);
+            set(newState, objectPath, null);
+            setFormData(newState);
+            console.log(`Also set file state to null for ${docTypeKey} at path ${objectPath}`);
+        } else {
+            console.warn(`Cannot clear file state: No object path found for ${docTypeKey}`);
+        }
+    };
+
+    // Función auxiliar interna (usada por renderUploadStatus y handleCancelPendingUpload)
+    const getPathForDocType = (key: string): string | null => {
+         switch (key) {
+             // Persona Natural
+             case 'cedula_pdf_id': return 'persona_natural.cedula_pdf';
+             case 'ruc_pdf_id_natural': return 'persona_natural.ruc_pdf';
+             // Persona Juridica
+             case 'ruc_pdf_id_juridica': return 'persona_juridica.ruc_pdf';
+             case 'cedula_representante_legal_pdf_id': return 'persona_juridica.cedula_representante_legal_pdf';
+             case 'nombramiento_representante_legal_pdf_id': return 'persona_juridica.nombramiento_representante_legal_pdf';
+             // Empresa Representada (anidado)
+             case 'ruc_empresa_pdf_id': return 'persona_juridica.empresa_representante_legal.ruc_empresa_pdf';
+             case 'autorizacion_representacion_pdf_id': return 'persona_juridica.empresa_representante_legal.autorizacion_representacion_pdf';
+             case 'cedula_representante_persona_natural_pdf_id': return 'persona_juridica.empresa_representante_legal.cedula_representante_legal_pdf';
+             default:
+                 console.warn(`Unknown docTypeKey in getPathForDocType: ${key}`);
+                 return null;
+         }
+     };
+
+    // --- Helper para renderizar estado de subida (Actualizado) ---
+    const renderUploadStatus = (docTypeKey: string, docName: string) => {
+        const pending = pendingUploads[docTypeKey];
+        // getPathForDocType ahora está fuera, pero es accesible
+        const objectPath = getPathForDocType(docTypeKey);
+        const existingFile = objectPath ? get(formData, objectPath, undefined) as ArchivoInfo | undefined : undefined;
+        const uploadingNow = isUploading[docTypeKey] ?? false;
+        const showUploadButton = !pending && !(mode === 'edit' && existingFile?.external_url) && !uploadingNow;
 
         return (
             <div className="space-y-1">
-                <Label htmlFor={docType}>{docName}</Label>
-                <div className="flex items-center gap-2 mt-1">
-                     {/* TODO: En modo edición, mostrar enlace al doc existente si existe ID */}
-                     {/* {mode === 'edit' && existingDocId && <a href={...}>Ver Actual</a> } */}
+                <Label htmlFor={docTypeKey}>{docName}</Label>
+                <div className="flex items-center gap-2 mt-1 min-h-[36px]"> {/* Altura mínima */} 
 
-                    {pending ? (
+                    {/* Mostrar Spinner si se está subiendo */} 
+                    {uploadingNow && (
+                        <div className="flex items-center justify-center p-2 flex-grow text-sm text-gray-500">
+                            <MiniSpinner />
+                            <span className="ml-2">Subiendo...</span>
+                        </div>
+                    )}
+
+                    {/* Mostrar subida pendiente */} 
+                    {pending && !uploadingNow && (
                          <div className="flex items-center gap-1 text-sm text-green-700 p-2 bg-green-50 rounded border border-green-200 flex-grow">
                             <DocumentCheckIcon className="h-4 w-4 flex-shrink-0" />
                              <span className="truncate" title={pending.name}>{pending.name}</span>
-                             {/* Podría añadirse botón para remover subida pendiente */}
+                            <button
+                                type="button"
+                                onClick={() => handleCancelPendingUpload(docTypeKey)}
+                                className="ml-auto text-xs text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-100"
+                                title="Cancelar subida pendiente"
+                            >
+                                &times;
+                            </button>
                          </div>
-                    ) : (
-                        <UploadButton<OurFileRouter, "propertyDocument"> // TODO: Usar endpoint correcto!
-                            endpoint="propertyDocument" // <<< CAMBIAR A ENDPOINT APROPIADO (ej: "clientDocument")
-                            onClientUploadComplete={(res) => handleUploadComplete(docType, res)}
-                            onUploadError={(error) => handleUploadError(docType, error)}
+                    )}
+
+                    {/* Mostrar enlace a archivo existente */} 
+                    {mode === 'edit' && existingFile?.external_url && !pending && !uploadingNow && (
+                        <div className="flex items-center gap-2 text-sm text-gray-700 p-2 bg-gray-50 rounded border border-gray-200 flex-grow">
+                            <LinkIcon className="h-4 w-4 flex-shrink-0 text-gray-500" />
+                            <a
+                                href={existingFile.external_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="truncate hover:underline text-blue-600"
+                                title={`Ver ${existingFile.filename || docName}`}
+                            >
+                                {existingFile.filename || `Ver ${docName}`}
+                            </a>
+                             {/* Botón para remover/reemplazar (Opcional) */}
+                             <button
+                                 type="button"
+                                 onClick={() => {
+                                     if (objectPath) {
+                                        // Clonar profundamente el estado para evitar mutaciones directas
+                                        const newState = structuredClone(formData);
+                                        // Usar lodash.set para poner el valor en la ruta anidada a null
+                                        set(newState, objectPath, null);
+                                        // Actualizar el estado del formulario
+                                        setFormData(newState);
+                                        console.log(`Cleared existing file state for ${docTypeKey} at path ${objectPath}`);
+                                     } else {
+                                         console.warn(`Cannot clear file: No object path found for ${docTypeKey}`);
+                                     }
+                                 }}
+                                 className="ml-auto p-1 text-gray-400 hover:text-red-600 hover:bg-red-100 rounded"
+                                 title={`Quitar ${docName}`}
+                            >
+                                 <TrashIcon className="h-4 w-4" /> 
+                             </button>
+                         </div>
+                    )}
+
+                    {/* Mostrar botón de subida */} 
+                    {showUploadButton && (
+                        <UploadButton<OurFileRouter, "clientDocument"> 
+                            endpoint="clientDocument"
+                             // <<< Pasar handlers para inicio/error/completo
+                            onUploadBegin={() => handleUploadBegin(docTypeKey)}
+                            onClientUploadComplete={(res) => handleUploadComplete(docTypeKey, res)}
+                            onUploadError={(error) => handleUploadError(docTypeKey, error)}
                             appearance={{
                                 button: `text-xs text-black font-medium px-3 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 flex items-center gap-1 ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`,
                                 allowedContent: "hidden",
-                                container: "w-auto", // Ajustar tamaño si es necesario
+                                container: "w-auto", 
                             }}
                             content={{
                                 button() {
@@ -367,7 +497,7 @@ export function ClientForm({
                         />
                      )}
                  </div>
-                {uploadErrors[docType] && <p className="text-xs text-red-600 mt-1">{uploadErrors[docType]}</p>}
+                {uploadErrors[docTypeKey] && !uploadingNow && <p className="text-xs text-red-600 mt-1">{uploadErrors[docTypeKey]}</p>}
             </div>
         );
     };
