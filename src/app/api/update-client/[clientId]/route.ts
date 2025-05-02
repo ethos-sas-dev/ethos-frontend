@@ -1,5 +1,3 @@
-"use server"; // Marcar como Server Action o API Route Handler
-
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 // Importar los tipos BASE del formulario
@@ -54,12 +52,16 @@ type ClientFormDataForAPI = Omit<BaseClientFormData, 'persona_natural' | 'person
 };
 
 // --- Handler para PUT (o POST si prefieres) ---
-export async function PUT(request: Request, { params }: { params: { clientId: string } }) {
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ clientId: string }> }
+) {
     if (!supabaseAdmin) {
         return NextResponse.json({ message: 'Server configuration error.' }, { status: 500 });
     }
 
-    const clientId = parseInt(params.clientId, 10);
+    const paramsResolved = await params;
+    const clientId = parseInt(paramsResolved.clientId, 10);
     if (isNaN(clientId)) {
         return NextResponse.json({ message: 'Invalid client ID.' }, { status: 400 });
     }
