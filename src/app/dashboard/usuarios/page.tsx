@@ -12,7 +12,8 @@ import {
   KeyIcon,
   UserIcon,
   BuildingOffice2Icon,
-  ArrowPathIcon // Para recargar y procesando
+  ArrowPathIcon,
+  TrashIcon // Añadimos ícono de eliminación
 } from "@heroicons/react/24/outline";
 import { Button } from "../../_components/ui/button";
 import { Input } from "../../_components/ui/input";
@@ -94,6 +95,11 @@ export default function UsuariosPage() {
     const [statusModal, setStatusModal] = useState<{ open: boolean; title: string; message: string; type: "success" | "error"; }>({ open: false, title: "", message: "", type: "success" });
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
     const [sortField, setSortField] = useState<'email' | 'tipo'>('email'); // Default sort
+    
+    // Nuevo estado para eliminar usuarios
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     // Estados de Datos
     const [users, setUsers] = useState<UserProfile[]>([]);
@@ -350,6 +356,61 @@ export default function UsuariosPage() {
         });
     };
 
+    // --- Función para eliminar usuarios ---
+    const handleDeleteUser = async () => {
+        if (!userToDelete) return;
+        
+        setIsDeleting(true);
+        try {
+            console.log("Eliminando usuario:", userToDelete.id);
+            
+            // 1. Llamar a la API para eliminar el usuario
+            const response = await fetch('/api/delete-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: userToDelete.id }),
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || `Error del servidor: ${response.status}`);
+            }
+            
+            console.log("API delete user successful:", result);
+            setStatusModal({ 
+                open: true, 
+                title: "Éxito", 
+                message: "Usuario eliminado exitosamente.", 
+                type: "success" 
+            });
+            
+            // Cerrar el modal de confirmación
+            setDeleteConfirmOpen(false);
+            setUserToDelete(null);
+            
+            // Recargar datos
+            setIsRefetching(true);
+            fetchData();
+        } catch (error: any) {
+            console.error("Delete user error:", error);
+            setStatusModal({ 
+                open: true, 
+                title: "Error", 
+                message: `Error al eliminar usuario: ${error.message}`, 
+                type: "error" 
+            });
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
+    // Función para abrir el modal de confirmación
+    const confirmDelete = (user: UserProfile) => {
+        setUserToDelete(user);
+        setDeleteConfirmOpen(true);
+    };
+
     // --- Renderizado --- 
     // if (isLoading) { // Podríamos tener un skeleton más grande para la página entera
     //     return <div>Cargando...</div>;
@@ -473,6 +534,7 @@ export default function UsuariosPage() {
                                         <TableHead className="hidden lg:table-cell">Tipo Persona</TableHead>
                                         <TableHead className="hidden lg:table-cell">Rol</TableHead>
                                         <TableHead className="hidden xl:table-cell text-center">Estado</TableHead>
+                                        <TableHead className="py-3 text-right">Acciones</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -518,6 +580,16 @@ export default function UsuariosPage() {
                                                             {estadoTexto}
                                                         </span>
                                                     </TableCell>
+                                                    <TableCell className="py-3 text-right">
+                                                        <Button
+                                                            onClick={() => confirmDelete(u)}
+                                                            variant="ghost"
+                                                            className="text-gray-500 hover:text-red-600"
+                                                            title="Eliminar usuario"
+                                                        >
+                                                            <TrashIcon className="h-4 w-4" />
+                                                        </Button>
+                                                    </TableCell>
                                                 </TableRow>
                                             );
                                         })
@@ -546,6 +618,7 @@ export default function UsuariosPage() {
                                         <TableHead>Rol</TableHead>
                                         <TableHead className="hidden lg:table-cell">Proyectos Asignados</TableHead>
                                         <TableHead className="hidden xl:table-cell text-center">Estado</TableHead>
+                                        <TableHead className="py-3 text-right">Acciones</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -585,6 +658,16 @@ export default function UsuariosPage() {
                                                         <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${estadoClase}`}>
                                                             {estadoTexto}
                                                         </span>
+                                                    </TableCell>
+                                                    <TableCell className="py-3 text-right">
+                                                        <Button
+                                                            onClick={() => confirmDelete(u)}
+                                                            variant="ghost"
+                                                            className="text-gray-500 hover:text-red-600"
+                                                            title="Eliminar usuario"
+                                                        >
+                                                            <TrashIcon className="h-4 w-4" />
+                                                        </Button>
                                                     </TableCell>
                                                 </TableRow>
                                             );
@@ -747,6 +830,49 @@ export default function UsuariosPage() {
                      </DialogFooter>
                  </DialogContent>
              </Dialog>
+
+            {/* Modal de Confirmación de Eliminación */}
+            <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+                <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                        <DialogTitle>Confirmar Eliminación</DialogTitle>
+                    </DialogHeader>
+                    <div className="py-4">
+                        <p className="text-sm text-gray-600">
+                            ¿Estás seguro de que deseas eliminar el usuario <span className="font-semibold">{userToDelete?.email}</span>?
+                        </p>
+                        <p className="mt-2 text-sm text-red-600">
+                            Esta acción no se puede deshacer y eliminará el acceso del usuario al sistema.
+                        </p>
+                        
+                        {userToDelete?.perfil_cliente && (
+                            <div className="mt-4 p-3 bg-amber-50 rounded-md border border-amber-200">
+                                <p className="text-sm text-amber-800">
+                                    <strong>Nota:</strong> El perfil de cliente asociado se desvinculará pero NO se eliminará.
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setDeleteConfirmOpen(false)}
+                            disabled={isDeleting}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={handleDeleteUser}
+                            disabled={isDeleting}
+                            className="bg-red-600 hover:bg-red-700 text-white"
+                        >
+                            {isDeleting ? <ArrowPathIcon className="h-4 w-4 animate-spin mr-2" /> : <TrashIcon className="h-4 w-4 mr-2" />}
+                            Eliminar
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* Modal de Estado */} 
              <StatusModal

@@ -16,8 +16,9 @@ const LoadingSpinner = () => (
 );
 
 const PropertyCard = ({ propiedad }: { propiedad: any }) => {
-  // Accede a la URL a través de la relación 'imagen' y usa external_url
-  const imageUrl = propiedad.imagen?.external_url || "/bodega.png";
+  // Modificamos esta línea para no usar la imagen predeterminada
+  // const imageUrl = propiedad.imagen?.external_url || "/bodega.png";
+  const imageUrl = propiedad.imagen?.external_url;
   const identificadorInferior = propiedad.identificadores?.inferior || '';
   const idInferior = propiedad.identificadores?.idInferior || '';
   const identificadorIntermedio = propiedad.identificadores?.intermedio || '';
@@ -35,12 +36,18 @@ const PropertyCard = ({ propiedad }: { propiedad: any }) => {
       animate={{ opacity: 1, y: 0 }}
     >
       <div className="relative h-48">
-        <Image
-          src={imageUrl}
-          alt={`${identificadorInferior} ${idInferior}`}
-          fill
-          className="object-cover"
-        />
+        {imageUrl ? (
+          <Image
+            src={imageUrl}
+            alt={`${identificadorInferior} ${idInferior}`}
+            fill
+            className="object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gray-50">
+            <BuildingOffice2Icon className="w-16 h-16 text-gray-400" />
+          </div>
+        )}
         <span
           className={`absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-medium ${
             propiedad.estado_uso === 'enUso'

@@ -83,6 +83,10 @@ export default function ConfiguracionFacturacionModal({
   const [configExistente, setConfigExistente] = useState<boolean>(false);
   const [showReemplazarConfirmacion, setShowReemplazarConfirmacion] = useState<boolean>(false);
   
+  // Nuevo estado para el modo de entrada y valor total
+  const [inputMode, setInputMode] = useState<'tasa' | 'total'>('tasa');
+  const [valorTotalIngresado, setValorTotalIngresado] = useState<number | null>(null);
+  
   // Cargar configuración existente al abrir el modal
   useEffect(() => {
     if (isOpen) {
@@ -126,6 +130,12 @@ export default function ConfiguracionFacturacionModal({
           notas_configuracion: data.notas_configuracion,
           solo_factura_actual: data.solo_factura_actual || false
         });
+        
+        // Si hay tasa y área, calcular el total para mostrar
+        if (data.tasa_base_especial !== null && areaPropiedad > 0) {
+          const tasa = data.tasa_base_especial;
+          setValorTotalIngresado(tasa * areaPropiedad);
+        }
       } else {
         setConfigExistente(false);
       }
@@ -234,6 +244,32 @@ export default function ConfiguracionFacturacionModal({
     }));
   };
   
+  // Función para calcular la tasa base a partir del valor total
+  const calcularTasaDesdeTotal = (total: number): number => {
+    if (!areaPropiedad || areaPropiedad <= 0) return 0;
+    // Calculamos la tasa pero no redondeamos automáticamente
+    return total / areaPropiedad;
+  };
+  
+  // Actualizar la tasa cuando cambia el valor total
+  useEffect(() => {
+    if (inputMode === 'total' && valorTotalIngresado !== null && areaPropiedad > 0) {
+      const nuevaTasa = calcularTasaDesdeTotal(valorTotalIngresado);
+      setConfiguracion(prev => ({
+        ...prev,
+        tasa_base_especial: nuevaTasa
+      }));
+    }
+  }, [valorTotalIngresado, areaPropiedad, inputMode]);
+  
+  // Actualizar el valor total cuando cambia la tasa
+  useEffect(() => {
+    if (inputMode === 'tasa' && configuracion.tasa_base_especial !== null && areaPropiedad > 0) {
+      const nuevoTotal = configuracion.tasa_base_especial * areaPropiedad;
+      setValorTotalIngresado(parseFloat(nuevoTotal.toFixed(2)));
+    }
+  }, [configuracion.tasa_base_especial, areaPropiedad, inputMode]);
+  
   // Calcular vista previa del impacto de la configuración
   const calcularVistaPreviaImpacto = () => {
     // Si no se aplica tasa especial o el área es 0, no hay cálculo de subtotal
@@ -241,7 +277,14 @@ export default function ConfiguracionFacturacionModal({
       return { subtotal: 0, iva: 0, total: 0 };
     }
     
-    const subtotal = configuracion.tasa_base_especial * areaPropiedad;
+    // Usar el valor total ingresado directamente si estamos en modo total
+    let subtotal = 0;
+    if (inputMode === 'total' && valorTotalIngresado !== null) {
+      subtotal = valorTotalIngresado;
+    } else {
+      subtotal = configuracion.tasa_base_especial * areaPropiedad;
+    }
+
     const iva = configuracion.aplica_iva_general && configuracion.porcentaje_iva_general 
       ? (subtotal * configuracion.porcentaje_iva_general / 100) 
       : 0;
@@ -358,32 +401,85 @@ export default function ConfiguracionFacturacionModal({
             </div>
             
             {configuracion.aplica_tasa_especial && (
-              <div className="grid grid-cols-3 items-center gap-4">
-                <Label htmlFor="tasa_base" className="text-right">
-                  Tasa base especial <span className="text-red-500">*</span>
-                </Label>
-                <div className="col-span-2">
-                  <div className="relative">
-                    <Input
-                      id="tasa_base"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={configuracion.tasa_base_especial !== null ? configuracion.tasa_base_especial : ""}
-                      onChange={(e) => handleChange("tasa_base_especial", e.target.value ? parseFloat(e.target.value) : null)}
-                      className="pr-8"
-                      placeholder="Valor específico"
-                      required={configuracion.aplica_tasa_especial}
+              <>
+                <div className="flex items-center space-x-4 mb-2">
+                  <Label>Modo de ingreso:</Label>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="modo_tasa" 
+                      checked={inputMode === 'tasa'}
+                      onCheckedChange={() => setInputMode('tasa')}
                     />
-                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <span className="text-gray-500">$</span>
+                    <Label htmlFor="modo_tasa" className="text-sm">Ingresar tasa base</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="modo_total" 
+                      checked={inputMode === 'total'}
+                      onCheckedChange={() => setInputMode('total')}
+                    />
+                    <Label htmlFor="modo_total" className="text-sm">Ingresar valor total</Label>
+                  </div>
+                </div>
+
+                {inputMode === 'tasa' ? (
+                  <div className="grid grid-cols-3 items-center gap-4">
+                    <Label htmlFor="tasa_base" className="text-right">
+                      Tasa base especial <span className="text-red-500">*</span>
+                    </Label>
+                    <div className="col-span-2">
+                      <div className="relative">
+                        <Input
+                          id="tasa_base"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={configuracion.tasa_base_especial !== null ? configuracion.tasa_base_especial : ""}
+                          onChange={(e) => handleChange("tasa_base_especial", e.target.value ? parseFloat(e.target.value) : null)}
+                          className="pr-8"
+                          placeholder="Valor específico"
+                          required={configuracion.aplica_tasa_especial}
+                        />
+                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                          <span className="text-gray-500">$</span>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Este valor se multiplicará por el área de la propiedad
+                      </p>
                     </div>
                   </div>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Este valor se multiplicará por el área de la propiedad
-                  </p>
-                </div>
-              </div>
+                ) : (
+                  <div className="grid grid-cols-3 items-center gap-4">
+                    <Label htmlFor="valor_total" className="text-right">
+                      Valor total deseado <span className="text-red-500">*</span>
+                    </Label>
+                    <div className="col-span-2">
+                      <div className="relative">
+                        <Input
+                          id="valor_total"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={valorTotalIngresado !== null ? valorTotalIngresado : ""}
+                          onChange={(e) => setValorTotalIngresado(e.target.value ? parseFloat(e.target.value) : null)}
+                          className="pr-8"
+                          placeholder="Valor total deseado"
+                          required={configuracion.aplica_tasa_especial}
+                        />
+                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                          <span className="text-gray-500">$</span>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-500 mt-1">
+                        {areaPropiedad > 0 
+                          ? `La tasa calculada será $${configuracion.tasa_base_especial?.toFixed(6) || 0} por m²`
+                          : "Ingrese el área de la propiedad para calcular la tasa"}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
             
             {configuracion.aplica_iva_general && (
@@ -428,12 +524,16 @@ export default function ConfiguracionFacturacionModal({
                       <div className="text-gray-600">Tasa base especial:</div>
                       <div className="text-right font-medium">
                         {configuracion.tasa_base_especial !== null
-                          ? `$${configuracion.tasa_base_especial.toFixed(2)}`
+                          ? `$${inputMode === 'total' ? configuracion.tasa_base_especial.toFixed(6) : configuracion.tasa_base_especial.toFixed(2)}`
                           : "No especificada"}
                       </div>
                       
                       <div className="text-gray-600">Subtotal calculado:</div>
-                      <div className="text-right font-medium">${impactoCalculado.subtotal}</div>
+                      <div className="text-right font-medium">
+                        {inputMode === 'total' && valorTotalIngresado !== null 
+                          ? `$${valorTotalIngresado.toFixed(2)}` 
+                          : `$${impactoCalculado.subtotal}`}
+                      </div>
                     </>
                   )}
                   
@@ -458,7 +558,11 @@ export default function ConfiguracionFacturacionModal({
                   {configuracion.aplica_tasa_especial && (
                     <>
                       <div className="text-gray-600 font-medium">Total calculado:</div>
-                      <div className="text-right font-medium text-emerald-600">${impactoCalculado.total}</div>
+                      <div className="text-right font-medium text-emerald-600">
+                        {inputMode === 'total' && valorTotalIngresado !== null && !configuracion.aplica_iva_general
+                          ? `$${valorTotalIngresado.toFixed(2)}`
+                          : `$${impactoCalculado.total}`}
+                      </div>
                     </>
                   )}
                 </div>

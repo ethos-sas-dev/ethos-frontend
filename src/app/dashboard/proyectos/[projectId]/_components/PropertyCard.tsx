@@ -86,8 +86,6 @@ const PropertyCard = memo(function PropertyCard({ property, projectId }: Propert
     return property.identificadores?.[tipo] || '';
   };
 
-  const imageUrl = property.imagen || "/bodega.png"; // Default image
-
   return (
     // Use Link wrapping the motion.div for better semantics
     <Link
@@ -101,13 +99,19 @@ const PropertyCard = memo(function PropertyCard({ property, projectId }: Propert
         transition={{ duration: 0.3 }}
       >
         <div className="relative h-40 bg-gray-100 flex-shrink-0"> {/* Reduced height */}
-          <Image
-              src={imageUrl}
+          {property.imagen ? (
+            <Image
+              src={property.imagen}
               alt={`${getIdentificador('inferior')} ${getIdentificador('idInferior')}`}
               fill
               sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
               className="object-cover"
-          />
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <BuildingOffice2Icon className="w-16 h-16 text-gray-400" />
+            </div>
+          )}
           {/* Area Badge */}
           {property.area_total !== null && property.area_total !== undefined && (
              <div className="absolute top-2 left-2 z-10">
@@ -116,23 +120,22 @@ const PropertyCard = memo(function PropertyCard({ property, projectId }: Propert
                 </div>
             </div>
           )}
-           {/* Occupancy Status Badge */}
-           <div className="absolute top-2 right-2 z-10">
-                <span className={`px-2 py-1 rounded-md text-xs font-medium shadow-sm ${statusColorClasses}`}>
-                    {occupancyStatus}
-                </span>
-            </div>
         </div>
         <div className="p-3 flex-grow flex flex-col"> {/* Reduced padding */}
           {/* Header con identificadores */}
           <div className="mb-1.5">
-             <h3 className="font-semibold text-sm text-gray-900 group-hover:text-emerald-700 transition-colors truncate" title={`${getIdentificador('inferior')} ${getIdentificador('idInferior')}`}>
-              {getIdentificador('inferior')} {getIdentificador('idInferior')}
-              </h3>
-              <p className="text-xs text-gray-500 truncate" title={`${getIdentificador('superior')} ${getIdentificador('idSuperior')} / ${getIdentificador('intermedio')} ${getIdentificador('idIntermedio')}`}>
-                 {getIdentificador('superior')} {getIdentificador('idSuperior')}
-                 {getIdentificador('intermedio') && ` / ${getIdentificador('intermedio')} ${getIdentificador('idIntermedio')}`}
-              </p>
+             <div className="flex items-center justify-between">
+               <h3 className="font-semibold text-sm text-gray-900 group-hover:text-emerald-700 transition-colors truncate" title={`${getIdentificador('inferior')} ${getIdentificador('idInferior')}`}>
+                {getIdentificador('inferior')} {getIdentificador('idInferior')}
+               </h3>
+               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColorClasses}`}>
+                 {occupancyStatus}
+               </span>
+             </div>
+             <p className="text-xs text-gray-500 truncate mt-0.5" title={`${getIdentificador('superior')} ${getIdentificador('idSuperior')} / ${getIdentificador('intermedio')} ${getIdentificador('idIntermedio')}`}>
+               {getIdentificador('superior')} {getIdentificador('idSuperior')}
+               {getIdentificador('intermedio') && ` / ${getIdentificador('intermedio')} ${getIdentificador('idIntermedio')}`}
+             </p>
           </div>
 
           {/* Display Name (Owner/Occupant) */}

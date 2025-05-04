@@ -104,6 +104,30 @@ export const ourFileRouter = {
       // O podrías mover esa lógica aquí si prefieres, pero requiere más metadata.
       return { uploadedBy: metadata.userId, fileKey: file.key };
     }),
+
+  // >>> NUEVO ENDPOINT PARA IMÁGENES DE PROYECTO <<<
+  projectImage: f({
+    image: { 
+      maxFileSize: "4MB", 
+      maxFileCount: 1 
+    }
+  })
+    .middleware(async ({ req }) => {
+      // Usar la misma autenticación placeholder por ahora
+      const user = await auth(req);
+      if (!user || !user.id) throw new UploadThingError("Unauthorized");
+      
+      // Opcionalmente podrías pasar metadata como el ID del proyecto
+      // const projectId = req.headers.get("x-project-id");
+      return { userId: user.id };
+    })
+    .onUploadComplete(async ({ metadata, file }) => {
+      console.log("[ProjectImage] Upload complete for userId:", metadata.userId);
+      console.log("[ProjectImage] file url:", file.url);
+      console.log("[ProjectImage] file key:", file.key);
+      
+      return { uploadedBy: metadata.userId, fileKey: file.key, url: file.url };
+    }),
 } satisfies FileRouter;
 
 export type OurFileRouter = typeof ourFileRouter; 

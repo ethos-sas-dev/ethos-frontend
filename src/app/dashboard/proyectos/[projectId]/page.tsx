@@ -297,15 +297,28 @@ export default function ProjectDetailPage() {
                     )}
                      {/* Title and Location Overlay - Adjusted font sizes */}
                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex flex-col justify-end p-6">
-                        {/* Adjusted font size for title (e.g., text-3xl) */}
-                        <h1 className="text-3xl font-semibold text-white mb-1 shadow-sm">
-                            {project.nombre}
-                        </h1>
-                         {/* Adjusted font size for location (e.g., text-base or text-lg) */}
-                        <p className="text-base text-white/90 flex items-center">
-                            <MapPinIcon className="w-4 h-4 mr-1.5 flex-shrink-0" />
-                            {project.ubicacion}
-                        </p>
+                        <div className="flex items-end justify-between">
+                            <div>
+                                {/* Adjusted font size for title (e.g., text-3xl) */}
+                                <h1 className="text-3xl font-semibold text-white mb-1 shadow-sm">
+                                    {project.nombre}
+                                </h1>
+                                {/* Adjusted font size for location (e.g., text-base or text-lg) */}
+                                <p className="text-base text-white/90 flex items-center">
+                                    <MapPinIcon className="w-4 h-4 mr-1.5 flex-shrink-0" />
+                                    {project.ubicacion}
+                                </p>
+                            </div>
+                            {/* {canManageProject && (
+                                <Link 
+                                    href={`/dashboard/proyectos/${projectId}/editar`}
+                                    className="flex items-center gap-1.5 px-3 py-2 bg-white/20 backdrop-blur-sm rounded-lg text-white text-sm font-medium hover:bg-white/30 transition-colors"
+                                >
+                                    <PencilSquareIcon className="w-4 h-4" />
+                                    Editar Proyecto
+                                </Link>
+                            )} */}
+                        </div>
                     </div>
                      {/* Options Menu Button */}
                     {canManageProject && (

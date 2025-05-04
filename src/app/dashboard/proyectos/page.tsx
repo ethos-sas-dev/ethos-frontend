@@ -239,7 +239,7 @@ export default function ProyectosPage() {
           {isDirectorio ? 'Todos los Proyectos' : 'Proyectos Asignados'}
         </h1>
         {canCreate && (
-          <Button variant="default" className="bg-emerald-600 hover:bg-emerald-700 flex items-center gap-2" onClick={() => router.push('/dashboard/proyectos/nuevo')}>
+          <Button variant="default" className="bg-emerald-600 hover:bg-emerald-700 flex items-center gap-2" onClick={() => router.push('/dashboard/proyectos/crear')}>
             <PlusIcon className="w-4 h-4" />
             Nuevo Proyecto
           </Button>
@@ -263,7 +263,7 @@ export default function ProyectosPage() {
             {!isDirectorio ? 'No tienes proyectos asignados actualmente.' : 'No hay proyectos registrados en el sistema.'}
           </p>
           {canCreate && (
-             <Button variant="outline" className="mt-4" onClick={() => router.push('/dashboard/proyectos/nuevo')}>
+             <Button variant="outline" className="mt-4" onClick={() => router.push('/dashboard/proyectos/crear')}>
                Crear primer proyecto
             </Button>
           )}
