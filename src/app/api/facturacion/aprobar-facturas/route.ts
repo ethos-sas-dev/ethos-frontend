@@ -16,6 +16,8 @@ const supabaseAdmin = supabaseUrl && supabaseServiceKey
 
 type AprobarFacturasRequest = {
   facturaIds: number[];
+  prefijoSecuencia?: string;      // Nuevo campo opcional
+  numeroSecuenciaInicial?: number; // Nuevo campo opcional
 };
 
 // Tipos simplificados para datos relacionados (ajustar según schema real)
@@ -166,7 +168,10 @@ function prepararDetallesContifico(items: ItemFactura[], servicioContificoId?: s
 /**
  * Construye el payload completo y ENVÍA a Contifico.
  */
-const prepararYEnviarAContifico = async (factura: FacturaCompleta): Promise<{ success: boolean; contificoId?: string; error?: string }> => {
+const prepararYEnviarAContifico = async (
+  factura: FacturaCompleta, 
+  numeroDocumento: string // Recibe el número de documento como argumento
+): Promise<{ success: boolean; contificoId?: string; error?: string }> => {
   
   // 1. Validar datos necesarios
   if (!factura.propiedad?.proyecto?.api_contifico) {
@@ -186,7 +191,7 @@ const prepararYEnviarAContifico = async (factura: FacturaCompleta): Promise<{ su
     return { success: false, error: "No se pudieron preparar los detalles de la factura." };
   }
   
-  // 2. Construir Payload
+  // 2. Construir Payload (Ya no genera número de documento aquí)
   const ahora = new Date();
   const fechaEmision = `${('0' + ahora.getDate()).slice(-2)}/${('0' + (ahora.getMonth() + 1)).slice(-2)}/${ahora.getFullYear()}`;
   
@@ -197,7 +202,7 @@ const prepararYEnviarAContifico = async (factura: FacturaCompleta): Promise<{ su
     pos: 'b8dafe87-f3d4-46c6-92b8-24c36e151dfb', // Asegúrate que este POS sea el correcto
     fecha_emision: fechaEmision,
     tipo_documento: 'FAC',
-    documento: '', 
+    documento: numeroDocumento, // Usa el número de documento proporcionado
     estado: 'P', 
     autorizacion: '', 
     cliente: datosClienteContifico,
@@ -207,10 +212,11 @@ const prepararYEnviarAContifico = async (factura: FacturaCompleta): Promise<{ su
     iva: parseFloat(factura.monto_iva.toFixed(2)), 
     total: parseFloat(factura.total.toFixed(2)), 
     detalles: detallesContifico,
+    electronico: true
   };
   
   // 3. LLAMADA REAL a Contífico
-  console.log(`Enviando a Contífico (Factura ID: ${factura.id})...`);
+  console.log(`Enviando a Contífico (Factura ID: ${factura.id}, Documento: ${numeroDocumento})...`);
   
   try {
     const configAxios = {
@@ -265,11 +271,22 @@ export async function POST(request: Request) {
 
   try {
     const data: AprobarFacturasRequest = await request.json();
-    const { facturaIds } = data;
+    const { facturaIds, prefijoSecuencia, numeroSecuenciaInicial } = data; // Obtener los campos
     
+    // Validar que los IDs de factura existen
     if (!facturaIds || !Array.isArray(facturaIds) || facturaIds.length === 0) {
       return NextResponse.json({ success: false, message: 'Debe proporcionar un array de IDs de facturas para aprobar' }, { status: 400 });
     }
+
+    // Validar que la secuencia es obligatoria y válida
+    if (prefijoSecuencia === undefined || numeroSecuenciaInicial === undefined) {
+      return NextResponse.json({ success: false, message: 'Falta el prefijo o el número inicial de la secuencia.' }, { status: 400 });
+    }
+    if (!/^\d{3}-\d{3}-$/.test(prefijoSecuencia) || numeroSecuenciaInicial <= 0 || numeroSecuenciaInicial.toString().length > 9) {
+       return NextResponse.json({ success: false, message: 'Prefijo o número de secuencia inicial inválido.' }, { status: 400 });
+    }
+    
+    let siguienteNumeroSecuencia: number = numeroSecuenciaInicial;
     
     // 2. Obtener las facturas CON DATOS RELACIONADOS para Contífico (SIN USUARIO)
     const { data: facturasParaProcesar, error: facturasError } = await supabaseAdmin
@@ -353,8 +370,12 @@ export async function POST(request: Request) {
         };
 
       try {
-        // Llamar a la NUEVA función que envía a Contífico
-        const contificoResultado = await prepararYEnviarAContifico(factura);
+        // Generar el número de documento secuencial usando la secuencia obligatoria
+        const numeroDocumento = `${prefijoSecuencia}${siguienteNumeroSecuencia.toString().padStart(9, '0')}`;
+        siguienteNumeroSecuencia++; // Incrementar para la próxima factura
+        
+        // Llamar a la función que envía a Contífico, pasando el número de documento
+        const contificoResultado = await prepararYEnviarAContifico(factura, numeroDocumento);
         
         if (contificoResultado.success) {
           // Éxito: Actualizar estado en Supabase
@@ -382,6 +403,7 @@ export async function POST(request: Request) {
           if (updateError) console.error(`Error updating observations for Factura ID ${factura.id}:`, updateError);
           throw new Error(contificoResultado.error || 'Error desconocido al enviar a Contifico');
         }
+
       } catch (error: any) {
         resultados.errores++;
         resultados.erroresDetalle.push({ facturaId: factura.id, error: error.message || 'Error desconocido' });

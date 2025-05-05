@@ -393,24 +393,8 @@ export default function FacturacionPage() {
     }
   };
   
-  // Función para aprobar facturas seleccionadas
-  const aprobarFacturas = async () => {
-    if (selectedFacturas.length === 0) {
-      setStatusModal({
-        open: true,
-        title: "Error",
-        message: "Debe seleccionar al menos una factura para aprobar",
-        type: "error",
-      });
-      return;
-    }
-    
-    // Mostrar el modal de confirmación
-    setIsConfirmApprovalOpen(true);
-  };
-  
-  // Modificar la función procesarAprobacionFacturas para que maneje lotes
-  const procesarAprobacionFacturas = async () => {
+  // Modificar la función procesarAprobacionFacturas para que acepte prefijo y numeroInicial
+  const procesarAprobacionFacturas = async (prefijo?: string, numeroInicial?: number) => {
     setIsConfirmApprovalOpen(false); // Cerrar modal de confirmación
     setIsBatchProcessing(true);
     setBatchErrorsDetails([]);
@@ -442,10 +426,23 @@ export default function FacturacionPage() {
       }));
 
       try {
+        // Construir el cuerpo del request
+        const requestBody: { facturaIds: number[]; prefijoSecuencia?: string; numeroSecuenciaInicial?: number } = {
+          facturaIds: batchIds,
+        };
+        // Solo añadir si se proporcionaron valores válidos
+        if (prefijo && numeroInicial !== undefined) {
+          requestBody.prefijoSecuencia = prefijo;
+          // El número inicial solo se envía para el primer lote
+          if (i === 0) { 
+            requestBody.numeroSecuenciaInicial = numeroInicial;
+          }
+        }
+        
         const response = await fetch('/api/facturacion/aprobar-facturas', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ facturaIds: batchIds }),
+          body: JSON.stringify(requestBody), // Enviar el cuerpo construido
         });
         
         const result = await response.json();
@@ -457,7 +454,7 @@ export default function FacturacionPage() {
           if (result.erroresDetalle && result.erroresDetalle.length > 0) {
             setBatchErrorsDetails(prev => [
               ...prev,
-              ...result.erroresDetalle.map((e: any) => `Factura ID ${e.facturaId}: ${e.error}`)
+              ...result.erroresDetalle.map((e: { facturaId: number; error: string }) => `Factura ID ${e.facturaId}: ${e.error}`)
             ]);
           }
         } else {
@@ -1145,7 +1142,7 @@ export default function FacturacionPage() {
               size="sm"
               className="bg-[#008A4B] hover:bg-[#006837]"
               disabled={selectedFacturas.length === 0 || isBatchProcessing}
-              onClick={aprobarFacturas}
+              onClick={() => setIsConfirmApprovalOpen(true)}
             >
               <CheckCircleIcon className="w-4 h-4 mr-2" />
               Aprobar Seleccionadas ({selectedFacturas.length})
@@ -1632,7 +1629,7 @@ export default function FacturacionPage() {
         isOpen={isConfirmApprovalOpen}
         onClose={() => setIsConfirmApprovalOpen(false)}
         onConfirm={procesarAprobacionFacturas}
-        isLoading={isApprovingFacturas}
+        isLoading={isApprovingFacturas || isBatchProcessing}
         facturaCount={selectedFacturas.length}
       />
     </div>
