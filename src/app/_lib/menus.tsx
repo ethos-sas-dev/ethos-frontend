@@ -54,11 +54,6 @@ export const menuItems: Record<UserRole, MenuItems['items']> = {
       href: "/dashboard/clientes"
     },
     {
-      title: "Clientes",
-      icon: UserGroupIcon,
-      href: "/dashboard/clientes"
-    },
-    {
       title: "Correos",
       icon: EnvelopeIcon,
       href: "/dashboard/correos"

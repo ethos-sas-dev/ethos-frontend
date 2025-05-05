@@ -55,11 +55,14 @@ export default function LoginPage() {
 
         <div className="flex">
           {/* Left side image */}
-          <div className="w-1/2 h-[calc(100vh-70px)] min-h-[490px] relative bg-[#006837] flex items-center justify-center">
-            <div className="text-white text-center px-12">
-              <h2 className="text-3xl font-semibold mb-4">Bienvenido/a a Ethos</h2>
-              <p className="text-xl">Sistema de gestión de propiedades y proyectos</p>
-            </div>
+          <div className="w-1/2 h-[calc(100vh-70px)] min-h-[490px] relative">
+            <Image
+              alt="Ethos-Login-Background"
+              className="absolute inset-0 h-full w-full object-cover"
+              priority
+              fill
+              src="/hero-bg.png"
+            />
           </div>
 
           {/* Right side login form */}
@@ -143,14 +146,14 @@ export default function LoginPage() {
                 </button>
 
                 {/* Añadir enlace para crear cuenta */}
-                <div className="text-center mt-4">
+                {/* <div className="text-center mt-4">
                   <p className="text-gray-600">
                     ¿No tienes una cuenta?{' '}
                     <Link href="/signup" className="text-[#008A4B] hover:underline">
                       Crear cuenta
                     </Link>
                   </p>
-                </div>
+                </div> */}
               </form>
             </div>
           </div>

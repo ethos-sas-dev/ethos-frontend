@@ -117,9 +117,9 @@ const AdministradorDashboard = () => {
       setError(null)
       try {
         const { count: projectCount, error: projectError } = await supabase.from('proyectos').select('*' , { count: 'exact', head: true })
-        const { count: userCount, error: userError } = await supabase.from('auth.users').select('*' , { count: 'exact', head: true })
+        const { count: userCount, error: userError } = await supabase.from('users').select('*' , { count: 'exact', head: true })
         const { count: requestCount, error: requestError } = await supabase.from('tickets').select('*' , { count: 'exact', head: true }).eq('estado', 'abierto')
-        const { count: invoiceCount, error: invoiceError } = await supabase.from('facturas').select('*' , { count: 'exact', head: true }).in('estado', ['PendienteValidacion', 'Aprobada', 'Enviada', 'Vencida'])
+        const { count: invoiceCount, error: invoiceError } = await supabase.from('facturas').select('*' , { count: 'exact', head: true }).in('estado', ['Borrador'])
         
         if (projectError || userError || requestError || invoiceError) {
           console.error('Supabase count errors:', { projectError, userError, requestError, invoiceError })
@@ -154,8 +154,8 @@ const AdministradorDashboard = () => {
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard title="Proyectos activos" value={stats.proyectos} icon={BuildingOffice2Solid} iconColor="bg-emerald-600" href="/dashboard/proyectos" />
-        <StatCard title="Usuarios totales" value={stats.usuarios} icon={UserGroupSolid} iconColor="bg-blue-600" href="/dashboard/usuarios" />
-        <StatCard title="Solicitudes Nuevas (Tickets)" value={stats.solicitudesNuevas} icon={ClipboardDocumentListSolid} iconColor="bg-amber-600" href="/dashboard/mesa-de-ayuda" />
+        {/* <StatCard title="Usuarios totales" value={stats.usuarios} icon={UserGroupSolid} iconColor="bg-blue-600" href="/dashboard/usuarios" /> */}
+        {/* <StatCard title="Solicitudes Nuevas (Tickets)" value={stats.solicitudesNuevas} icon={ClipboardDocumentListSolid} iconColor="bg-amber-600" href="/dashboard/mesa-de-ayuda" /> */}
         <StatCard title="Facturas Pendientes" value={stats.facturasPendientes} icon={CurrencyDollarSolid} iconColor="bg-purple-600" href="/dashboard/facturacion-cobranza" />
       </div>
       
@@ -165,7 +165,7 @@ const AdministradorDashboard = () => {
              <p className="text-gray-500">Resumen de validaciones o aprobaciones pendientes.</p>
         </div>
 
-        <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-xl shadow-md p-6">
+        {/* <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-xl shadow-md p-6">
           <h2 className="text-xl font-semibold mb-4 text-white">Acciones administrativas</h2>
           <div className="space-y-4">
              <ActionCard 
@@ -193,7 +193,7 @@ const AdministradorDashboard = () => {
                href="/dashboard/configuracion" 
              />
           </div>
-        </div>
+        </div> */}
       </div>
     </div>
   )
