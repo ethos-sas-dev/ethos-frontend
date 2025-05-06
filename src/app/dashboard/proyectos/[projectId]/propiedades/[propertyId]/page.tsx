@@ -1115,12 +1115,28 @@ export default function PropertyDetailPage() {
                      <div className="bg-white rounded-xl border p-4 md:p-6 shadow-sm">
                         <div className="flex justify-between items-center mb-4">
                              <h2 className="text-lg font-semibold">Propietario</h2>
-                             {/* Button to reassign owner */}
-                             {/* {isAdmin && property.propietario && (
-                                 <Button size="sm" variant="outline" onClick={() => router.push(`/dashboard/proyectos/${projectId}/propiedades/${propertyId}/asignar-propietario`)}>
-                                    <ArrowsRightLeftIcon className="h-3 w-3 mr-1" /> Reasignar
-                                 </Button>
-                             )} */}
+                             {/* Dropdown para gestionar propietario (solo Admins/Directorio) */}
+                             {(isAdmin || isDirectorio) && (
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                        >
+                                            <PencilSquareIcon className="h-4 w-4 mr-1" />
+                                            Gestionar
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                        <DropdownMenuItem asChild>
+                                            <Link href={`/dashboard/proyectos/${projectId}/propiedades/${propertyId}/asignar-cliente?assignRole=Propietario`}>
+                                                <UserPlusIcon className="h-4 w-4 mr-2" />
+                                                Asignar/Cambiar Propietario
+                                            </Link>
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                             )}
                          </div>
 
                          {property.propietario ? (
