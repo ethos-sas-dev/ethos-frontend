@@ -21,6 +21,7 @@ type GenerarFacturasRequest = {
 
 export async function POST(request: Request) {
   if (!supabaseAdmin) {
+    console.error("API /api/facturacion/generar-facturas: Error de configuración del servidor (Supabase Admin Client no disponible)");
     return NextResponse.json({ 
       success: false, 
       message: 'Error de configuración del servidor' 
@@ -29,11 +30,27 @@ export async function POST(request: Request) {
 
   try {
     // 1. Obtener datos del request
-    const data: GenerarFacturasRequest = await request.json();
+    console.log("API /api/facturacion/generar-facturas: Request recibido.");
+    const rawBody = await request.text();
+    console.log("API /api/facturacion/generar-facturas: Raw request body:", rawBody);
+
+    let data: GenerarFacturasRequest;
+    try {
+      data = JSON.parse(rawBody);
+    } catch (parseError: any) {
+      console.error("API /api/facturacion/generar-facturas: Error al parsear JSON del body:", parseError.message, "Body:", rawBody);
+      return NextResponse.json({ 
+        success: false, 
+        message: `Error al parsear los datos de la solicitud: ${parseError.message}` 
+      }, { status: 400 });
+    }
+    
+    console.log("API /api/facturacion/generar-facturas: Parsed request data:", data);
     const { proyectoId, servicioId, periodo } = data;
     
     // Validaciones
     if (!proyectoId || !servicioId || !periodo) {
+      console.warn("API /api/facturacion/generar-facturas: Validación fallida - Faltan datos. ProyectoID:", proyectoId, "ServicioID:", servicioId, "Periodo:", periodo);
       return NextResponse.json({ 
         success: false, 
         message: 'Faltan datos requeridos: proyectoId, servicioId o periodo' 
@@ -88,10 +105,10 @@ export async function POST(request: Request) {
     for (const propiedad of propiedades || []) {
       try {
         // Verificar si la propiedad está en uso
-        // if (propiedad.estado_uso !== 'enUso') {
-        //   resultados.omitidas++;
-        //   continue;
-        // }
+        if (propiedad.estado_uso !== 'enUso') {
+          resultados.omitidas++;
+          continue;
+        }
         
         // Determinar el cliente a facturar (encargado_pago)
         let clienteId: number | null = null;

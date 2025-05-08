@@ -348,27 +348,32 @@ export default function FacturacionPage() {
     try {
       const periodo = getPeriodo();
       
-      // Buscar el ID del servicio a partir del código seleccionado
       const servicioSeleccionado = servicios.find(s => s.codigo === selectedServicio);
       
       if (!servicioSeleccionado) {
+        // Este error se maneja en el frontend y se muestra en StatusModal
         throw new Error(`No se encontró el servicio con código: ${selectedServicio}`);
       }
       
+      const payload = {
+        proyectoId: parseInt(selectedProyecto),
+        servicioId: servicioSeleccionado.id,
+        periodo: periodo,
+      };
+
+      console.log("Enviando a API /api/facturacion/generar-facturas, Payload:", JSON.stringify(payload));
+
       const response = await fetch("/api/facturacion/generar-facturas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          proyectoId: parseInt(selectedProyecto),
-          servicioId: servicioSeleccionado.id,
-          periodo: periodo,
-        }),
+        body: JSON.stringify(payload),
       });
       
       const result = await response.json();
       
       if (!response.ok) {
-        throw new Error(result.message || "Error al generar facturas");
+        console.error("Error de API al generar facturas. Status:", response.status, "Resultado:", result);
+        throw new Error(result.message || "Error al generar facturas desde la API");
       }
       
       // Actualizar la lista de facturas con las nuevas facturas borrador
@@ -381,11 +386,11 @@ export default function FacturacionPage() {
         type: "success",
       });
     } catch (error: any) {
-      console.error("Error al generar facturas:", error);
+      console.error("Error detallado en la función generarFacturas (frontend):", error);
       setStatusModal({
         open: true,
-        title: "Error",
-        message: error.message || "Error al generar facturas",
+        title: "Error en Generación",
+        message: error.message || "Ocurrió un error al generar facturas.",
         type: "error",
       });
     } finally {
@@ -406,6 +411,9 @@ export default function FacturacionPage() {
     let successCount = 0;
     let errorCount = 0;
 
+    // Variable para rastrear el próximo número de secuencia a usar para el lote
+    let proximoNumeroSecuenciaParaLote: number | undefined = numeroInicial;
+
     setBatchProgress({
       processed: 0,
       success: 0,
@@ -419,38 +427,44 @@ export default function FacturacionPage() {
       const currentBatchNum = Math.floor(i / batchSize) + 1;
       const batchIds = facturaIdsToProcess.slice(i, i + batchSize);
       
-      // Actualizar progreso antes de enviar el lote
       setBatchProgress(prev => ({ 
         ...(prev as any), 
         currentBatch: currentBatchNum 
       }));
 
       try {
-        // Construir el cuerpo del request
         const requestBody: { facturaIds: number[]; prefijoSecuencia?: string; numeroSecuenciaInicial?: number } = {
           facturaIds: batchIds,
         };
-        // Solo añadir si se proporcionaron valores válidos
-        if (prefijo && numeroInicial !== undefined) {
+        
+        // Incluir prefijo y el número de secuencia actual para ESTE lote
+        if (prefijo && proximoNumeroSecuenciaParaLote !== undefined) {
           requestBody.prefijoSecuencia = prefijo;
-          // El número inicial solo se envía para el primer lote
-          if (i === 0) { 
-            requestBody.numeroSecuenciaInicial = numeroInicial;
-          }
+          requestBody.numeroSecuenciaInicial = proximoNumeroSecuenciaParaLote;
         }
         
+        console.log(`Procesando Lote ${currentBatchNum}/${totalBatches}. Enviando requestBody:`, JSON.stringify(requestBody));
+
         const response = await fetch('/api/facturacion/aprobar-facturas', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody), // Enviar el cuerpo construido
+          body: JSON.stringify(requestBody),
         });
         
         const result = await response.json();
+        console.log(`Respuesta Lote ${currentBatchNum}/${totalBatches}:`, result);
         
         if (response.ok && result.success) {
-          successCount += result.aprobadas || 0;
+          const aprobadasEnEsteLote = result.aprobadas || 0;
+          successCount += aprobadasEnEsteLote;
           errorCount += result.errores || 0;
-          // Guardar detalles de errores si existen
+
+          // Si se usó secuenciación y se aprobaron facturas, actualizar el próximo número
+          if (prefijo && proximoNumeroSecuenciaParaLote !== undefined && aprobadasEnEsteLote > 0) {
+            proximoNumeroSecuenciaParaLote += aprobadasEnEsteLote;
+            console.log(`Lote ${currentBatchNum} exitoso. Próximo numeroSecuenciaParaLote actualizado a: ${proximoNumeroSecuenciaParaLote}`);
+          }
+
           if (result.erroresDetalle && result.erroresDetalle.length > 0) {
             setBatchErrorsDetails(prev => [
               ...prev,
@@ -458,42 +472,37 @@ export default function FacturacionPage() {
             ]);
           }
         } else {
-          // Error en la respuesta completa del lote
-          errorCount += batchIds.length; // Asumir que todas en el lote fallaron
+          errorCount += batchIds.length; 
           const errorMsg = result.message || `Error en lote ${currentBatchNum}`;
-           setBatchErrorsDetails(prev => [
+          console.error(`Error en Lote ${currentBatchNum}: ${errorMsg}`, result);
+          setBatchErrorsDetails(prev => [
              ...prev,
              `Lote ${currentBatchNum}: ${errorMsg}`
            ]);
         }
       } catch (error: any) {
-        // Error de red para el lote
-        errorCount += batchIds.length; // Asumir que todas en el lote fallaron
+        errorCount += batchIds.length; 
         const errorMsg = error.message || `Error de red en lote ${currentBatchNum}`;
+        console.error(`Error de Red en Lote ${currentBatchNum}:`, error);
         setBatchErrorsDetails(prev => [
           ...prev,
           `Lote ${currentBatchNum}: ${errorMsg}`
         ]);
-        console.error(`Error en lote ${currentBatchNum}:`, error);
       }
       
       processedCount += batchIds.length;
-      // Actualizar progreso después de procesar el lote
       setBatchProgress(prev => ({ 
         ...(prev as any),
-        processed: Math.min(processedCount, totalFacturas), // Asegurar que no exceda el total
+        processed: Math.min(processedCount, totalFacturas),
         success: successCount,
         errors: errorCount,
       }));
       
-      // Pequeña pausa entre lotes (opcional, para no saturar)
       // await new Promise(resolve => setTimeout(resolve, 100)); 
     }
 
-    // Proceso completado
     setIsBatchProcessing(false);
     
-    // Mostrar resumen final
     setStatusModal({
       open: true,
       title: "Proceso de Aprobación por Lotes Completado",
@@ -501,10 +510,9 @@ export default function FacturacionPage() {
       type: errorCount > 0 ? "error" : "success",
     });
 
-    // Recargar facturas y limpiar selección
     await fetchFacturasBorrador();
     setSelectedFacturas([]);
-    setBatchProgress(null); // Limpiar progreso
+    setBatchProgress(null);
   };
   
   // Manejo de selección/deselección de facturas
