@@ -105,10 +105,10 @@ export async function POST(request: Request) {
     for (const propiedad of propiedades || []) {
       try {
         // Verificar si la propiedad está en uso
-        if (propiedad.estado_uso !== 'enUso') {
-          resultados.omitidas++;
-          continue;
-        }
+        // if (propiedad.estado_uso !== 'enUso') {
+        //   resultados.omitidas++;
+        //   continue;
+        // }
         
         // Determinar el cliente a facturar (encargado_pago)
         let clienteId: number | null = null;
