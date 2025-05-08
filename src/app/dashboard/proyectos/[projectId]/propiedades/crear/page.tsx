@@ -10,7 +10,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { useAuth } from "../../../../../_lib/auth/AuthContext"; // Ajustar ruta si es necesario
 import { createClient } from '../../../../../../../lib/supabase/client'; // Ajustar ruta si es necesario
-import { PropertyForm, PropertyFormData } from "@/app/dashboard/_components/PropertyForm"; // Ajustar ruta si es necesario
+import { PropertyForm, PropertyFormData, PendingUploadsState } from "@/app/dashboard/_components/PropertyForm"; // Importar PendingUploadsState
 
 // Tipo para datos del proyecto (tasas)
 type ProjectData = {
@@ -81,7 +81,7 @@ export default function CreatePropertyPage() {
     }, [authLoading, fetchProjectData]);
 
     // --- Form Submission Handler (for Creation) ---
-    const handleSubmit = async (formDataPayload: any) => {
+    const handleSubmit = async (formDataPayload: any, pendingUploads: PendingUploadsState) => {
          if (!isAdmin && !isDirectorio) return;
 
         setSaving(true);
@@ -97,6 +97,7 @@ export default function CreatePropertyPage() {
             };
 
             console.log("Creating property with payload:", createPayload);
+            console.log("Pending uploads:", pendingUploads);
 
             // --- LLAMADA A LA NUEVA API ROUTE ---
             const response = await fetch('/api/propiedades', { // Usaremos /api/propiedades (o la ruta que definamos)
@@ -104,7 +105,10 @@ export default function CreatePropertyPage() {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(createPayload),
+                body: JSON.stringify({
+                    propertyData: createPayload,
+                    pendingUploads: pendingUploads
+                }),
             });
 
             if (!response.ok) {

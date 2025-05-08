@@ -11,7 +11,7 @@ import {
 import { useAuth } from "../../../../../../_lib/auth/AuthContext";
 import { createClient } from '../../../../../../../../lib/supabase/client';
 import Link from "next/link";
-import { PropertyForm, PropertyFormData } from "../../../../../_components/PropertyForm";
+import { PropertyForm, PropertyFormData, PendingUploadsState } from "../../../../../_components/PropertyForm";
 
 // Tipos locales simplificados
 type ProjectData = {
@@ -50,31 +50,71 @@ export default function EditPropertyPage() {
         setLoading(true);
         setError(null);
         try {
-            // Fetch property details (solo los necesarios para initialData del form)
-            const { data: propData, error: propError } = await supabase
+            // Fetch property details con los documentos
+            const { data: propDataResult, error: propError } = await supabase
                 .from('propiedades')
                 .select(`
                     id, proyecto_id, codigo_catastral, estado_entrega, estado_uso,
                     area_total, identificadores, estado_de_construccion, actividad,
                     monto_fondo_inicial, monto_alicuota_ordinaria,
-                    areas_desglosadas, pagos
+                    areas_desglosadas, pagos, encargado_pago,
+                    escritura_pdf_id, acta_entrega_pdf_id, contrato_arrendamiento_pdf_id
                 `)
                 .eq('id', propertyId)
                 .maybeSingle();
 
             if (propError) throw propError;
 
-            if (!propData) {
+            if (!propDataResult) {
                 setError("Propiedad no encontrada.");
                 setLoading(false);
                 return;
+            }
+
+            // Crear una copia modificable de los datos de la propiedad
+            let propertyDataWithDocs: any = { ...propDataResult };
+
+            // Si hay referencias a documentos, cargarlos
+            const docIds = [
+                propertyDataWithDocs.escritura_pdf_id,
+                propertyDataWithDocs.acta_entrega_pdf_id,
+                propertyDataWithDocs.contrato_arrendamiento_pdf_id
+            ].filter(id => id !== null);
+
+            if (docIds.length > 0) {
+                console.log("Cargando documentos con IDs:", docIds);
+                const { data: documentos, error: docError } = await supabase
+                    .from('archivos')
+                    .select('id, filename, external_url')
+                    .in('id', docIds);
+
+                if (docError) {
+                    console.error("Error al cargar documentos:", docError);
+                } else if (documentos && documentos.length > 0) {
+                    // Adjuntar la información del documento a los datos de la propiedad
+                    const docsMap: Record<number, any> = documentos.reduce((acc: Record<number, any>, doc: any) => {
+                        acc[doc.id] = doc;
+                        return acc;
+                    }, {});
+
+                    // Crear referencias a los documentos en la estructura que espera PropertyForm
+                    if (propertyDataWithDocs.escritura_pdf_id && docsMap[propertyDataWithDocs.escritura_pdf_id]) {
+                        propertyDataWithDocs.escritura_pdf = docsMap[propertyDataWithDocs.escritura_pdf_id];
+                    }
+                    if (propertyDataWithDocs.acta_entrega_pdf_id && docsMap[propertyDataWithDocs.acta_entrega_pdf_id]) {
+                        propertyDataWithDocs.acta_entrega_pdf = docsMap[propertyDataWithDocs.acta_entrega_pdf_id];
+                    }
+                    if (propertyDataWithDocs.contrato_arrendamiento_pdf_id && docsMap[propertyDataWithDocs.contrato_arrendamiento_pdf_id]) {
+                        propertyDataWithDocs.contrato_arrendamiento_pdf = docsMap[propertyDataWithDocs.contrato_arrendamiento_pdf_id];
+                    }
+                }
             }
 
             // Fetch project details for rates
             const { data: projData, error: projError } = await supabase
                  .from('proyectos')
                  .select('tasa_base_fondo_inicial, tasa_base_alicuota_ordinaria')
-                 .eq('id', propData.proyecto_id)
+                 .eq('id', propertyDataWithDocs.proyecto_id)
                  .maybeSingle();
 
             if (projError) throw projError;
@@ -84,7 +124,8 @@ export default function EditPropertyPage() {
                 tasa_base_alicuota_ordinaria: projData?.tasa_base_alicuota_ordinaria,
             });
 
-            setPropertyData(propData); // Guardar los datos originales
+            console.log("Datos de propiedad cargados con documentos:", propertyDataWithDocs);
+            setPropertyData(propertyDataWithDocs); // Guardar los datos con documentos
 
         } catch (err: any) {
             console.error("Error fetching data:", err);
@@ -102,7 +143,7 @@ export default function EditPropertyPage() {
 
     // --- Form Submission Handler (Simplificado) ---
     // Recibe los datos ya procesados del PropertyForm
-    const handleSubmit = async (formDataPayload: any) => {
+    const handleSubmit = async (formDataPayload: any, pendingUploads: PendingUploadsState) => {
         if (!isAdmin && !isDirectorio) return;
         if (!propertyData) return; // Ensure original data is loaded
 
@@ -110,22 +151,48 @@ export default function EditPropertyPage() {
         setError(null);
 
         try {
-            // Añadir `updated_at` al payload recibido
-            const updatePayload = {
-                ...formDataPayload,
-                updated_at: new Date().toISOString(),
-            };
+            console.log("Updating property with payload:", formDataPayload);
+            console.log("Pending uploads:", pendingUploads);
 
-            console.log("Updating property with payload:", updatePayload);
+            // Si hay subidas pendientes, usamos la API para procesarlas junto con la actualización
+            if (Object.keys(pendingUploads).length > 0) {
+                // Usar API para manejar tanto la actualización como las subidas pendientes
+                const response = await fetch('/api/propiedades/editar', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        propertyId,
+                        propertyData: {
+                            ...formDataPayload,
+                            updated_at: new Date().toISOString(),
+                        },
+                        pendingUploads
+                    }),
+                });
 
-            const { error: updateError } = await supabase
-                .from('propiedades')
-                .update(updatePayload)
-                .eq('id', propertyId);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `Error al actualizar la propiedad: ${response.statusText}`);
+                }
 
-            if (updateError) throw updateError;
+                const { updatedProperty } = await response.json();
+                console.log("Property updated successfully with documents:", updatedProperty);
+            } else {
+                // Si no hay archivos pendientes, hacemos la actualización directa con Supabase
+                const { error: updateError } = await supabase
+                    .from('propiedades')
+                    .update({
+                        ...formDataPayload,
+                        updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', propertyId);
 
-            console.log("Property updated successfully");
+                if (updateError) throw updateError;
+                console.log("Property updated successfully");
+            }
+
             setSaving(false);
             // Redirigir a la página de detalles después de guardar
             router.push(`/dashboard/proyectos/${projectId}/propiedades/${propertyId}`);

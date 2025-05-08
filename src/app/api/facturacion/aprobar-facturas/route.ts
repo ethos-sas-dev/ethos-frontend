@@ -195,8 +195,45 @@ const prepararYEnviarAContifico = async (
   const ahora = new Date();
   const fechaEmision = `${('0' + ahora.getDate()).slice(-2)}/${('0' + (ahora.getMonth() + 1)).slice(-2)}/${ahora.getFullYear()}`;
   
-  const identificadorPropiedad = factura.propiedad.identificadores?.inferior || `ID ${factura.propiedad_id}`;
-  const descripcionPayload = `Factura ${factura.items_factura?.[0]?.codigoServicio || 'Servicio'} - Periodo ${factura.periodo} - Prop. ${identificadorPropiedad}`.substring(0, 300);
+  // Obtener los identificadores de la propiedad en formato "ETAPA 4 - LOTE 2 - BODEGA 8"
+  let identificadoresFormateados = '';
+  if (factura.propiedad.identificadores) {
+    const ids = factura.propiedad.identificadores;
+    
+    // Obtener identificador superior (ej: ETAPA 4)
+    if (ids.superior && ids.idSuperior) {
+      identificadoresFormateados += `${ids.superior.toUpperCase()} ${ids.idSuperior}`;
+    }
+    
+    // Obtener identificador intermedio si existe (ej: LOTE 2)
+    if (ids.intermedio && ids.idIntermedio) {
+      identificadoresFormateados += ` - ${ids.intermedio.toUpperCase()} ${ids.idIntermedio}`;
+    }
+    
+    // Obtener identificador inferior (ej: BODEGA 8)
+    if (ids.inferior && ids.idInferior) {
+      identificadoresFormateados += ` - ${ids.inferior.toUpperCase()} ${ids.idInferior}`;
+    }
+  }
+  
+  if (!identificadoresFormateados) {
+    identificadoresFormateados = `PROPIEDAD ${factura.propiedad_id}`;
+  }
+  
+  // Formatear el período de factura (ej: ABRIL 2025)
+  let periodoFormateado = '';
+  try {
+    // Asumiendo que el periodo tiene formato YYYY-MM
+    const [anio, mes] = factura.periodo.split('-');
+    const nombreMes = new Date(parseInt(anio), parseInt(mes) - 1, 1).toLocaleDateString('es-ES', { month: 'long' }).toUpperCase();
+    periodoFormateado = `${nombreMes} ${anio}`;
+  } catch (e) {
+    periodoFormateado = factura.periodo; // Si hay error, usar el formato original
+  }
+  
+  // Construir la descripción completa
+  const servicioNombre = factura.items_factura?.[0]?.descripcion || factura.items_factura?.[0]?.codigoServicio || 'ALICUOTA';
+  const descripcionPayload = `${servicioNombre} ${periodoFormateado}, ${identificadoresFormateados}`.substring(0, 300);
 
   const payloadContifico = {
     pos: 'b8dafe87-f3d4-46c6-92b8-24c36e151dfb', // Asegúrate que este POS sea el correcto

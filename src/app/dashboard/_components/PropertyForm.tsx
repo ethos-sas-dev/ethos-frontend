@@ -14,8 +14,14 @@ import { Switch } from "../../_components/ui/switch";
 import {
     ExclamationTriangleIcon,
     PlusIcon,
-    TrashIcon
+    TrashIcon,
+    DocumentCheckIcon,
+    ArrowUpCircleIcon,
+    LinkIcon,
+    ArrowPathIcon
 } from "@heroicons/react/24/outline";
+import { UploadButton } from "@uploadthing/react";
+import type { OurFileRouter } from "../../api/uploadthing/core";
 import {
     propiedad_actividad,
     propiedad_estado_construccion,
@@ -48,6 +54,24 @@ type IdentificadoresData = {
 type PagosData = {
     encargadoDePago: typeof ENCARGADOS_PAGO[number]['value'] | null;
 }
+// --- Spinner Componente Simple ---
+const MiniSpinner = () => (
+    <ArrowPathIcon className="h-4 w-4 animate-spin text-gray-500" />
+);  
+// Tipos para los documentos de la propiedad
+type ArchivoInfo = { id: number; filename: string | null; external_url: string | null } | null;
+
+// Tipo para una subida pendiente
+type PendingUpload = {
+    name: string;
+    url: string; // ufsUrl de la respuesta de UploadThing
+    key: string; // key de la respuesta de UploadThing
+};
+
+// Estado de subidas pendientes - exportado para que la página principal pueda usarlo
+export type PendingUploadsState = {
+    [docType: string]: PendingUpload | null; // ej. { escritura_pdf_id: { name: '...', url: '...', key: '...' } }
+};
 
 export type PropertyFormData = { // Exportar para que la página la use
     identificadores: IdentificadoresData;
@@ -61,6 +85,16 @@ export type PropertyFormData = { // Exportar para que la página la use
     encargado_pago: typeof ENCARGADOS_PAGO[number]['value'] | null;
     monto_fondo_inicial: number | null; // Mantenido aquí, calculado antes de submit
     monto_alicuota_ordinaria: number | null; // Mantenido aquí, calculado antes de submit
+    
+    // IDs para documentos (en modo editar pueden estar ya presentes)
+    escritura_pdf_id?: number | null;
+    acta_entrega_pdf_id?: number | null;
+    contrato_arrendamiento_pdf_id?: number | null;
+    
+    // Referencias a la información del archivo (en modo editar)
+    escritura_pdf?: ArchivoInfo;
+    acta_entrega_pdf?: ArchivoInfo;
+    contrato_arrendamiento_pdf?: ArchivoInfo;
 };
 
 type ProjectData = {
@@ -72,7 +106,7 @@ type ProjectData = {
 interface PropertyFormProps {
     initialData: Partial<PropertyFormData>; // Partial permite datos iniciales incompletos para 'crear'
     projectData: ProjectData | null;
-    onSubmit: (data: any) => Promise<void>; // Recibirá el payload listo para API
+    onSubmit: (data: any, pendingUploads: PendingUploadsState) => Promise<void>; // Actualizado para incluir pendingUploads
     onCancel: () => void;
     isSaving: boolean;
     mode: 'create' | 'edit';
@@ -98,6 +132,16 @@ const defaultInitialData: PropertyFormData = {
     encargado_pago: 'Propietario',
     monto_fondo_inicial: null,
     monto_alicuota_ordinaria: null,
+    
+    // IDs para documentos
+    escritura_pdf_id: null,
+    acta_entrega_pdf_id: null,
+    contrato_arrendamiento_pdf_id: null,
+    
+    // Referencias a archivos
+    escritura_pdf: null,
+    acta_entrega_pdf: null,
+    contrato_arrendamiento_pdf: null
 };
 
 // Type for options used in Select components
@@ -118,6 +162,9 @@ export function PropertyForm({
         ...initialData // Sobreescribe con datos iniciales si existen (modo edit)
     });
     const [error, setError] = useState<string | null>(null); // Error interno del form si es necesario
+    const [pendingUploads, setPendingUploads] = useState<PendingUploadsState>({});
+    const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
+    const [isUploading, setIsUploading] = useState<Record<string, boolean>>({});
 
     // --- Efecto para inicializar/resetear el estado cuando initialData cambie ---
     useEffect(() => {
@@ -147,9 +194,23 @@ export function PropertyForm({
             encargado_pago: initialData?.encargado_pago || 'Propietario',
             monto_fondo_inicial: initialData?.monto_fondo_inicial ?? null, // Usar ??
             monto_alicuota_ordinaria: initialData?.monto_alicuota_ordinaria ?? null, // Usar ??
+            
+            // IDs para documentos
+            escritura_pdf_id: initialData?.escritura_pdf_id ?? null,
+            acta_entrega_pdf_id: initialData?.acta_entrega_pdf_id ?? null,
+            contrato_arrendamiento_pdf_id: initialData?.contrato_arrendamiento_pdf_id ?? null,
+            
+            // Referencias a archivos
+            escritura_pdf: initialData?.escritura_pdf ?? null,
+            acta_entrega_pdf: initialData?.acta_entrega_pdf ?? null,
+            contrato_arrendamiento_pdf: initialData?.contrato_arrendamiento_pdf ?? null
         });
+        
+        // Reiniciar estados de subida cuando cambian los datos iniciales
+        setPendingUploads({});
+        setUploadErrors({});
+        setIsUploading({});
     }, [initialData]); // Ejecutar cuando initialData cambie
-
 
     // --- Handlers (idénticos a los de editar/page.tsx) ---
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -298,6 +359,132 @@ export function PropertyForm({
         return { montoFondoInicial: fondoInicial, montoAlicuotaOrdinaria: alicuotaOrdinaria };
     };
 
+    // --- Helper para renderizar estado de subida ---
+    const renderUploadStatus = (docTypeKey: string, docName: string) => {
+        const pending = pendingUploads[docTypeKey];
+        let existingFile = null;
+        
+        // Determinar si existe un archivo según el tipo de documento
+        switch (docTypeKey) {
+            case 'escritura_pdf_id':
+                existingFile = formData.escritura_pdf;
+                break;
+            case 'acta_entrega_pdf_id':
+                existingFile = formData.acta_entrega_pdf;
+                break;
+            case 'contrato_arrendamiento_pdf_id':
+                existingFile = formData.contrato_arrendamiento_pdf;
+                break;
+        }
+        
+        const uploadingNow = isUploading[docTypeKey] ?? false;
+        const showUploadButton = !pending && !(mode === 'edit' && existingFile?.external_url) && !uploadingNow;
+
+        return (
+            <div className="space-y-1">
+                <Label htmlFor={docTypeKey}>{docName}</Label>
+                <div className="flex items-center gap-2 mt-1 min-h-[36px]">
+                    {/* Mostrar Spinner si se está subiendo */}
+                    {uploadingNow && (
+                        <div className="flex items-center justify-center p-2 flex-grow text-sm text-gray-500">
+                            <MiniSpinner />
+                            <span className="ml-2">Subiendo...</span>
+                        </div>
+                    )}
+
+                    {/* Mostrar subida pendiente */}
+                    {pending && !uploadingNow && (
+                        <div className="flex items-center gap-1 text-sm text-green-700 p-2 bg-green-50 rounded border border-green-200 flex-grow">
+                            <DocumentCheckIcon className="h-4 w-4 flex-shrink-0" />
+                            <span className="truncate" title={pending.name}>{pending.name}</span>
+                            <button
+                                type="button"
+                                onClick={() => handleCancelPendingUpload(docTypeKey)}
+                                className="ml-auto text-xs text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-100"
+                                title="Cancelar subida pendiente"
+                            >
+                                &times;
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Mostrar enlace a archivo existente */}
+                    {mode === 'edit' && existingFile?.external_url && !pending && !uploadingNow && (
+                        <div className="flex items-center gap-2 text-sm text-gray-700 p-2 bg-gray-50 rounded border border-gray-200 flex-grow">
+                            <LinkIcon className="h-4 w-4 flex-shrink-0 text-gray-500" />
+                            <a
+                                href={existingFile.external_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="truncate hover:underline text-blue-600"
+                                title={`Ver ${existingFile.filename || docName}`}
+                            >
+                                {existingFile.filename || `Ver ${docName}`}
+                            </a>
+                            {/* Botón para remover/reemplazar (Opcional) */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    // Actualizar formData para eliminar referencia al archivo
+                                    setFormData(prev => {
+                                        const newState = { ...prev };
+                                        switch (docTypeKey) {
+                                            case 'escritura_pdf_id':
+                                                newState.escritura_pdf_id = null;
+                                                newState.escritura_pdf = null;
+                                                break;
+                                            case 'acta_entrega_pdf_id':
+                                                newState.acta_entrega_pdf_id = null;
+                                                newState.acta_entrega_pdf = null;
+                                                break;
+                                            case 'contrato_arrendamiento_pdf_id':
+                                                newState.contrato_arrendamiento_pdf_id = null;
+                                                newState.contrato_arrendamiento_pdf = null;
+                                                break;
+                                        }
+                                        return newState;
+                                    });
+                                }}
+                                className="ml-auto p-1 text-gray-400 hover:text-red-600 hover:bg-red-100 rounded"
+                                title={`Quitar ${docName}`}
+                            >
+                                <TrashIcon className="h-4 w-4" />
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Mostrar botón de subida */}
+                    {showUploadButton && (
+                        <UploadButton<OurFileRouter, "propertyDocument">
+                            endpoint="propertyDocument"
+                            onUploadBegin={() => handleUploadBegin(docTypeKey)}
+                            onClientUploadComplete={(res) => handleUploadComplete(docTypeKey, res)}
+                            onUploadError={(error) => handleUploadError(docTypeKey, error)}
+                            appearance={{
+                                button: `text-xs text-black font-medium px-3 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 flex items-center gap-1 ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`,
+                                allowedContent: "hidden",
+                                container: "w-auto", 
+                            }}
+                            content={{
+                                button() {
+                                    return (
+                                        <>
+                                            <ArrowUpCircleIcon className="w-4 h-4 text-black" />
+                                            <span className="text-black">Subir {docName}</span>
+                                        </>
+                                    );
+                                },
+                            }}
+                        />
+                    )}
+                </div>
+                {uploadErrors[docTypeKey] && !uploadingNow && (
+                    <p className="text-xs text-red-600 mt-1">{uploadErrors[docTypeKey]}</p>
+                )}
+            </div>
+        );
+    };
+
     // --- Submit Handler Interno ---
     const handleInternalSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -339,18 +526,72 @@ export function PropertyForm({
             encargado_pago: formData.encargado_pago,
             monto_fondo_inicial: montoFondoInicial,
             monto_alicuota_ordinaria: montoAlicuotaOrdinaria,
+            // Añadir IDs de documentos existentes (si los hay)
+            escritura_pdf_id: formData.escritura_pdf_id,
+            acta_entrega_pdf_id: formData.acta_entrega_pdf_id,
+            contrato_arrendamiento_pdf_id: formData.contrato_arrendamiento_pdf_id,
             // 'estado_uso' will likely default to 'disponible' in the DB for creation
             // 'created_at', 'updated_at' handled by DB
         };
 
         try {
-            await onSubmit(finalPayload); // Llamar a la función onSubmit del padre
+            await onSubmit(finalPayload, pendingUploads); // Pasar pendingUploads al onSubmit padre
         } catch (submitError: any) {
             console.error("Error submitting form:", submitError);
             setError(submitError.message || "Ocurrió un error al guardar.");
         }
     };
 
+    // --- Handlers para Upload ---
+    const handleUploadBegin = (docTypeKey: string) => {
+        console.log(`[UploadBegin] para ${docTypeKey}`);
+        setIsUploading(prev => ({ ...prev, [docTypeKey]: true }));
+        setUploadErrors(prev => ({ ...prev, [docTypeKey]: '' })); // Limpiar error anterior al reintentar
+        setPendingUploads(prev => ({ ...prev, [docTypeKey]: null })); // Limpiar pendiente anterior si se reintenta
+    };
+
+    const handleUploadComplete = (docTypeKey: string, res: any[]) => {
+        console.log(`[UploadComplete] para ${docTypeKey}`);
+        setIsUploading(prev => ({ ...prev, [docTypeKey]: false })); // Finaliza carga
+        if (res && res.length > 0) {
+            const file = res[0];
+            const newUpload: PendingUpload = {
+                name: file.name,
+                url: file.url,
+                key: file.key
+            };
+            setPendingUploads(prev => ({ ...prev, [docTypeKey]: newUpload }));
+            setUploadErrors(prev => ({ ...prev, [docTypeKey]: '' })); 
+            console.log(`Subida exitosa para ${docTypeKey}:`, newUpload);
+        } else {
+            console.error(`Subida para ${docTypeKey} completada pero sin resultado.`);
+            setUploadErrors(prev => ({ ...prev, [docTypeKey]: 'Respuesta de subida inválida.' }));
+            setPendingUploads(prev => ({ ...prev, [docTypeKey]: null }));
+        }
+    };
+
+    const handleUploadError = (docTypeKey: string, error: Error) => {
+        console.error(`[UploadError] para ${docTypeKey}:`, error);
+        setIsUploading(prev => ({ ...prev, [docTypeKey]: false })); // Finaliza carga (con error)
+        setPendingUploads(prev => ({ ...prev, [docTypeKey]: null })); // Limpiar pendiente en error
+
+        let friendlyMessage = error.message || 'Error desconocido al subir.';
+        if (error.message.includes('FileSizeMismatch') || error.message.includes('maximum file size')) {
+            friendlyMessage = 'El archivo excede el tamaño máximo permitido (4MB).';
+        } else if (error.message.includes('Invalid file type')) {
+            friendlyMessage = 'Tipo de archivo no permitido. Intente con PDF o imagen.';
+        }
+
+        setUploadErrors(prev => ({ ...prev, [docTypeKey]: friendlyMessage }));
+    };
+
+    // --- Handler para Cancelar Subida Pendiente ---
+    const handleCancelPendingUpload = (docTypeKey: string) => {
+        console.log(`[CancelPending] para ${docTypeKey}`);
+        // Limpiar estado de pendiente y error
+        setPendingUploads(prev => ({ ...prev, [docTypeKey]: null }));
+        setUploadErrors(prev => ({ ...prev, [docTypeKey]: '' }));
+    };
 
     // --- JSX del Formulario (movido desde editar/page.tsx) ---
     return (
@@ -673,6 +914,26 @@ export function PropertyForm({
                 </div>
                 <p className="text-xs text-gray-500 italic">
                     Estos montos se basan en el área total y las tasas base del proyecto. Se guardarán al {mode === 'create' ? 'crear' : 'actualizar'}.
+                </p>
+            </fieldset>
+
+            {/* Sección de Documentos */}
+            <fieldset className="space-y-4 border p-4 rounded-md">
+                <legend className="text-sm font-medium px-1">Documentos de la Propiedad</legend>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Documentos de la propiedad */}
+                    <div>
+                        {renderUploadStatus('escritura_pdf_id', 'Escritura')}
+                    </div>
+                    <div>
+                        {renderUploadStatus('acta_entrega_pdf_id', 'Acta de Entrega')}
+                    </div>
+                    <div>
+                        {renderUploadStatus('contrato_arrendamiento_pdf_id', 'Contrato de Arrendamiento')}
+                    </div>
+                </div>
+                <p className="text-xs text-gray-500 italic mt-2">
+                    Estos documentos serán asociados a la propiedad y podrán ser visualizados por usuarios con permisos adecuados.
                 </p>
             </fieldset>
 
