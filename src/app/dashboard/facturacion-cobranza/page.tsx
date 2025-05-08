@@ -169,6 +169,7 @@ export default function FacturacionPage() {
     total: number;
     currentBatch: number;
     totalBatches: number;
+    message?: string; // Añadir message como opcional al tipo
   } | null>(null);
   const [batchErrorsDetails, setBatchErrorsDetails] = useState<string[]>([]);
   
@@ -400,119 +401,183 @@ export default function FacturacionPage() {
   
   // Modificar la función procesarAprobacionFacturas para que acepte prefijo y numeroInicial
   const procesarAprobacionFacturas = async (prefijo?: string, numeroInicial?: number) => {
-    setIsConfirmApprovalOpen(false); // Cerrar modal de confirmación
+    setIsConfirmApprovalOpen(false);
     setIsBatchProcessing(true);
     setBatchErrorsDetails([]);
-    const facturaIdsToProcess = [...selectedFacturas]; // Copiar los IDs
-    const totalFacturas = facturaIdsToProcess.length;
-    const batchSize = 10; // Tamaño del lote (ajustable)
-    const totalBatches = Math.ceil(totalFacturas / batchSize);
+    const facturaIdsToProcess = [...selectedFacturas];
+    const totalFacturasOriginal = facturaIdsToProcess.length;
+    const batchSize = 10;
+    const totalBatches = Math.ceil(totalFacturasOriginal / batchSize);
     let processedCount = 0;
     let successCount = 0;
     let errorCount = 0;
 
-    // Variable para rastrear el próximo número de secuencia a usar para el lote
     let proximoNumeroSecuenciaParaLote: number | undefined = numeroInicial;
+    const CONTIFICO_DOC_EXISTE_MSG = "Error 409 de Contifico: {\"mensaje\":\"Documento ya existe\"";
+    let facturasParaReintentarSecuencia: { id: number, originalError: string }[] = [];
 
     setBatchProgress({
       processed: 0,
       success: 0,
       errors: 0,
-      total: totalFacturas,
+      total: totalFacturasOriginal,
       currentBatch: 0,
       totalBatches: totalBatches,
+      message: undefined // Inicializar message
     });
 
-    for (let i = 0; i < totalFacturas; i += batchSize) {
+    // --- Fase 1: Procesamiento de Lotes Principales ---
+    for (let i = 0; i < totalFacturasOriginal; i += batchSize) {
       const currentBatchNum = Math.floor(i / batchSize) + 1;
       const batchIds = facturaIdsToProcess.slice(i, i + batchSize);
       
       setBatchProgress(prev => ({ 
         ...(prev as any), 
-        currentBatch: currentBatchNum 
+        currentBatch: currentBatchNum,
+        total: totalFacturasOriginal // Asegurar que el total se refiera al original
       }));
 
-      try {
-        const requestBody: { facturaIds: number[]; prefijoSecuencia?: string; numeroSecuenciaInicial?: number } = {
-          facturaIds: batchIds,
-        };
-        
-        // Incluir prefijo y el número de secuencia actual para ESTE lote
-        if (prefijo && proximoNumeroSecuenciaParaLote !== undefined) {
-          requestBody.prefijoSecuencia = prefijo;
-          requestBody.numeroSecuenciaInicial = proximoNumeroSecuenciaParaLote;
-        }
-        
-        console.log(`Procesando Lote ${currentBatchNum}/${totalBatches}. Enviando requestBody:`, JSON.stringify(requestBody));
+      const requestBody: { facturaIds: number[]; prefijoSecuencia?: string; numeroSecuenciaInicial?: number } = {
+        facturaIds: batchIds,
+      };
+      
+      if (prefijo && proximoNumeroSecuenciaParaLote !== undefined) {
+        requestBody.prefijoSecuencia = prefijo;
+        requestBody.numeroSecuenciaInicial = proximoNumeroSecuenciaParaLote;
+      }
+      
+      console.log(`Procesando Lote Principal ${currentBatchNum}/${totalBatches}. Enviando:`, JSON.stringify(requestBody));
 
+      try {
         const response = await fetch('/api/facturacion/aprobar-facturas', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(requestBody),
         });
-        
         const result = await response.json();
-        console.log(`Respuesta Lote ${currentBatchNum}/${totalBatches}:`, result);
+        console.log(`Respuesta Lote Principal ${currentBatchNum}/${totalBatches}:`, result);
         
-        if (response.ok && result.success) {
-          const aprobadasEnEsteLote = result.aprobadas || 0;
-          successCount += aprobadasEnEsteLote;
-          errorCount += result.errores || 0;
+        const aprobadasEnEsteLote = result.aprobadas || 0;
+        const erroresEnEsteLote = result.errores || 0;
 
-          // Si se usó secuenciación y se aprobaron facturas, actualizar el próximo número
+        if (response.ok && result.success) {
+          successCount += aprobadasEnEsteLote;
           if (prefijo && proximoNumeroSecuenciaParaLote !== undefined && aprobadasEnEsteLote > 0) {
             proximoNumeroSecuenciaParaLote += aprobadasEnEsteLote;
-            console.log(`Lote ${currentBatchNum} exitoso. Próximo numeroSecuenciaParaLote actualizado a: ${proximoNumeroSecuenciaParaLote}`);
+            console.log(`Lote Principal ${currentBatchNum} parcialmente exitoso. Próximo numeroSecuenciaParaLote actualizado a: ${proximoNumeroSecuenciaParaLote}`);
           }
 
+          // Manejar errores detallados del lote
           if (result.erroresDetalle && result.erroresDetalle.length > 0) {
-            setBatchErrorsDetails(prev => [
-              ...prev,
-              ...result.erroresDetalle.map((e: { facturaId: number; error: string }) => `Factura ID ${e.facturaId}: ${e.error}`)
-            ]);
+            result.erroresDetalle.forEach((e: { facturaId: number; error: string }) => {
+              if (prefijo && proximoNumeroSecuenciaParaLote !== undefined && e.error.includes(CONTIFICO_DOC_EXISTE_MSG)) {
+                console.log(`Factura ID ${e.facturaId} falló por documento existente. Añadiendo a cola de reintento.`);
+                facturasParaReintentarSecuencia.push({ id: e.facturaId, originalError: e.error });
+                // No se cuenta como error duro aún, ni incrementa errorCount general todavía.
+              } else {
+                errorCount++; // Error duro para otras causas
+                setBatchErrorsDetails(prevDetails => [...prevDetails, `Factura ID ${e.facturaId}: ${e.error}`]);
+              }
+            });
           }
         } else {
-          errorCount += batchIds.length; 
-          const errorMsg = result.message || `Error en lote ${currentBatchNum}`;
-          console.error(`Error en Lote ${currentBatchNum}: ${errorMsg}`, result);
-          setBatchErrorsDetails(prev => [
-             ...prev,
-             `Lote ${currentBatchNum}: ${errorMsg}`
-           ]);
+          // El lote completo falló o la respuesta no fue success
+          errorCount += batchIds.length - aprobadasEnEsteLote; // Contar las no aprobadas como errores
+          const errorMsg = result.message || `Error en lote principal ${currentBatchNum}`;
+          console.error(`Error en Lote Principal ${currentBatchNum}: ${errorMsg}`, result);
+          setBatchErrorsDetails(prevDetails => [...prevDetails, `Lote ${currentBatchNum}: ${errorMsg}`]);
         }
       } catch (error: any) {
-        errorCount += batchIds.length; 
-        const errorMsg = error.message || `Error de red en lote ${currentBatchNum}`;
-        console.error(`Error de Red en Lote ${currentBatchNum}:`, error);
-        setBatchErrorsDetails(prev => [
-          ...prev,
-          `Lote ${currentBatchNum}: ${errorMsg}`
-        ]);
+        errorCount += batchIds.length;
+        const errorMsg = error.message || `Error de red en lote principal ${currentBatchNum}`;
+        console.error(`Error de Red en Lote Principal ${currentBatchNum}:`, error);
+        setBatchErrorsDetails(prevDetails => [...prevDetails, `Lote ${currentBatchNum}: ${errorMsg}`]);
       }
       
       processedCount += batchIds.length;
       setBatchProgress(prev => ({ 
         ...(prev as any),
-        processed: Math.min(processedCount, totalFacturas),
+        processed: Math.min(processedCount, totalFacturasOriginal),
         success: successCount,
-        errors: errorCount,
+        errors: errorCount, // Errores duros contados hasta ahora
       }));
-      
-      // await new Promise(resolve => setTimeout(resolve, 100)); 
+    }
+
+    // --- Fase 2: Procesamiento de Reintentos por Secuencia Existente ---
+    if (facturasParaReintentarSecuencia.length > 0 && prefijo && proximoNumeroSecuenciaParaLote !== undefined) {
+      console.log(`Iniciando Fase de Reintento para ${facturasParaReintentarSecuencia.length} facturas.`);
+      const totalReintentos = facturasParaReintentarSecuencia.length;
+      let reintentosProcesados = 0;
+
+      for (const { id: facturaIdParaReintentar, originalError } of facturasParaReintentarSecuencia) {
+        reintentosProcesados++;
+        setBatchProgress(prev => ({
+          ...(prev as any),
+          currentBatch: totalBatches + 1, // Indicar que es una fase diferente
+          total: totalFacturasOriginal + totalReintentos, // El total ahora incluye los reintentos
+          processed: processedCount + reintentosProcesados -1, // Actualizar procesados
+          message: `Reintentando Factura ID ${facturaIdParaReintentar} (${reintentosProcesados}/${totalReintentos})...`
+        }));
+        
+        console.log(`Reintentando Factura ID ${facturaIdParaReintentar} con numeroSecuenciaInicial: ${proximoNumeroSecuenciaParaLote}`);
+        const requestBodyReintento = {
+          facturaIds: [facturaIdParaReintentar],
+          prefijoSecuencia: prefijo,
+          numeroSecuenciaInicial: proximoNumeroSecuenciaParaLote, // Usar el siguiente número disponible
+        };
+
+        try {
+          const responseReintento = await fetch('/api/facturacion/aprobar-facturas', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBodyReintento),
+          });
+          const resultReintento = await responseReintento.json();
+          console.log(`Respuesta Reintento Factura ID ${facturaIdParaReintentar}:`, resultReintento);
+
+          if (responseReintento.ok && resultReintento.success && resultReintento.aprobadas === 1) {
+            successCount++;
+            proximoNumeroSecuenciaParaLote++; // Incrementar para el siguiente reintento o fin
+            console.log(`Reintento exitoso para Factura ID ${facturaIdParaReintentar}. Próximo numeroSecuenciaParaLote: ${proximoNumeroSecuenciaParaLote}`);
+          } else {
+            errorCount++; // El reintento falló, ahora es un error duro.
+            const detalleErrorReintento = resultReintento.message || (resultReintento.erroresDetalle && resultReintento.erroresDetalle[0]?.error) || originalError;
+            setBatchErrorsDetails(prevDetails => [...prevDetails, `Factura ID ${facturaIdParaReintentar} (Reintento Fallido): ${detalleErrorReintento}`]);
+            console.log(`Reintento fallido para Factura ID ${facturaIdParaReintentar}.`);
+          }
+        } catch (error: any) {
+          errorCount++; // Error de red en reintento
+          setBatchErrorsDetails(prevDetails => [...prevDetails, `Factura ID ${facturaIdParaReintentar} (Error de Red en Reintento): ${error.message}`]);
+          console.error(`Error de red en reintento para Factura ID ${facturaIdParaReintentar}:`, error);
+        }
+        // Actualizar progreso después de cada reintento
+        setBatchProgress(prev => ({
+          ...(prev as any),
+          processed: processedCount + reintentosProcesados,
+          success: successCount,
+          errors: errorCount,
+          message: prev?.message?.startsWith('Reintentando') ? 'Completando reintentos...' : prev?.message // Limpiar mensaje específico del reintento si es el caso
+        }));
+      }
     }
 
     setIsBatchProcessing(false);
+    setBatchProgress(prev => ({ 
+        ...(prev ? prev : {} as any), // Asegurar que prev no sea null
+        message: undefined, // Limpiar mensaje de progreso
+        currentBatch: totalBatches + (facturasParaReintentarSecuencia.length > 0 ? 1:0) // reflejar la fase de reintento si ocurrió
+    }));
     
     setStatusModal({
       open: true,
-      title: "Proceso de Aprobación por Lotes Completado",
-      message: `Resultados: ${successCount} aprobadas, ${errorCount} con errores de ${totalFacturas} seleccionadas.${batchErrorsDetails.length > 0 ? `\nErrores detallados: ${batchErrorsDetails.join("; ")}` : ''}`,
+      title: "Proceso de Aprobación Completado",
+      message: `Resultados: ${successCount} aprobadas, ${errorCount} con errores de ${totalFacturasOriginal} inicialmente seleccionadas.${batchErrorsDetails.length > 0 ? `\nErrores detallados: ${batchErrorsDetails.join("; ")}` : ''}`,
       type: errorCount > 0 ? "error" : "success",
     });
 
     await fetchFacturasBorrador();
     setSelectedFacturas([]);
-    setBatchProgress(null);
+    // setBatchProgress(null); // Se maneja arriba para limpiar mensaje
   };
   
   // Manejo de selección/deselección de facturas
@@ -793,6 +858,7 @@ export default function FacturacionPage() {
         "Servicio", 
         "Encargado de Pago",
         "Estado", 
+        "Observaciones",
         "Subtotal", 
         "IVA", 
         "Total"
@@ -843,6 +909,7 @@ export default function FacturacionPage() {
           servicio,
           encargadoPago,
           factura.estado,
+          factura.observaciones || '-',
           factura.subtotal || 0,
           factura.monto_iva || 0,
           factura.total || 0
@@ -1509,6 +1576,7 @@ export default function FacturacionPage() {
                                                         <TableHead className="sticky top-0 bg-white">Propiedad</TableHead>
                                                         <TableHead className="sticky top-0 bg-white">Encargado Pago</TableHead>
                                                         <TableHead className="sticky top-0 bg-white">Estado</TableHead>
+                                                        <TableHead className="sticky top-0 bg-white">Observaciones</TableHead>
                                                         <TableHead className="text-right sticky top-0 bg-white">Subtotal</TableHead>
                                                         <TableHead className="text-right sticky top-0 bg-white">IVA</TableHead>
                                                         <TableHead className="text-right sticky top-0 bg-white">Total</TableHead>
@@ -1562,6 +1630,11 @@ export default function FacturacionPage() {
                                                               <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800">
                                                                 {factura.estado}
                                                               </span>
+                                                            </TableCell>
+                                                            <TableCell>
+                                                              <div className="text-xs text-gray-500 truncate max-w-xs" title={factura.observaciones}>
+                                                                {factura.observaciones || '-'}
+                                                              </div>
                                                             </TableCell>
                                                             <TableCell className="text-right">{formatCurrency(factura.subtotal || 0)}</TableCell>
                                                             <TableCell className="text-right">{formatCurrency(factura.monto_iva || 0)}</TableCell>
