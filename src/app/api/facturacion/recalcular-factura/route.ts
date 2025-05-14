@@ -98,12 +98,7 @@ export async function POST(request: Request) {
     
     // Si hay una tasa base especial, la aplicamos
     if (tasa_base_especial !== null && area_propiedad > 0) {
-      // Modificar el precio unitario en los items de la factura
-      nuevosItemsFactura = factura.items_factura.map((item: any) => ({
-        ...item,
-        precioUnitario: tasa_base_especial,
-        porcentajeIva: aplica_iva ? porcentaje_iva : 0
-      }));
+     
 
       // Recalcular totales
       nuevoSubtotal = area_propiedad * tasa_base_especial;
@@ -113,6 +108,13 @@ export async function POST(request: Request) {
       }
       
       nuevoTotal = nuevoSubtotal + nuevoIVA;
+      
+      // Modificar el precio unitario en los items de la factura
+      nuevosItemsFactura = factura.items_factura.map((item: any) => ({
+        ...item,
+        precioUnitario: nuevoSubtotal,
+        porcentajeIva: aplica_iva ? porcentaje_iva : 0
+      }));
     } 
     // Si solo se aplica IVA (sin cambiar la tasa base)
     else if (aplica_iva) {

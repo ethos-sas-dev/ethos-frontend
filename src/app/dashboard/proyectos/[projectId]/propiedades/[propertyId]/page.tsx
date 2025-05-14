@@ -26,6 +26,7 @@ import {
     EllipsisVerticalIcon,
     DocumentIcon, // Added icon
     ArrowUpCircleIcon,
+    TrashIcon, // Agregamos el icono de papelera para el botón de eliminar
 } from "@heroicons/react/24/outline";
 import Link from "next/link";
 import Image from "next/image";
@@ -307,6 +308,8 @@ export default function PropertyDetailPage() {
     const [updatingOccupancy, setUpdatingOccupancy] = useState(false); // State for occupancy updates
     const [missingOwnerDocs, setMissingOwnerDocs] = useState(0);
     const [missingTenantDocs, setMissingTenantDocs] = useState(0);
+    const [showDeleteModal, setShowDeleteModal] = useState(false); // Estado para controlar el modal de confirmación
+    const [isDeleting, setIsDeleting] = useState(false); // Estado para rastrear si se está eliminando
 
     const projectId = params.projectId as string;
     const propertyId = params.propertyId as string;
@@ -726,6 +729,33 @@ export default function PropertyDetailPage() {
      }, [property, documentMap]);
 
 
+    // --- Property Deletion Function ---
+    const handleDeleteProperty = async () => {
+        if (!property || !supabase) return;
+        
+        setIsDeleting(true);
+        setError(null);
+
+        try {
+            // Intentar eliminar la propiedad
+            const { error: deleteError } = await supabase
+                .from('propiedades')
+                .delete()
+                .eq('id', property.id);
+
+            if (deleteError) throw deleteError;
+
+            // Redirigir al usuario a la página del proyecto después de eliminar
+            router.push(`/dashboard/proyectos/${projectId}`);
+            
+        } catch (err: any) {
+            console.error("Error eliminando propiedad:", err);
+            setError(err.message || "Error al eliminar la propiedad.");
+            setIsDeleting(false);
+            setShowDeleteModal(false);
+        }
+    };
+
     // --- Render Logic ---
     if (loading || authLoading) {
         return (
@@ -919,6 +949,13 @@ export default function PropertyDetailPage() {
                                             <PencilSquareIcon className="h-4 w-4 mr-2" />
                                              Editar Propiedad
                                          </Link>
+                                     </DropdownMenuItem>
+                                     <DropdownMenuItem 
+                                        onClick={() => setShowDeleteModal(true)} 
+                                        className="text-red-600 focus:text-red-700 focus:bg-red-50"
+                                     >
+                                        <TrashIcon className="h-4 w-4 mr-2" />
+                                        Eliminar Propiedad
                                      </DropdownMenuItem>
                                      {/* Add other options here if needed */}
                                  </DropdownMenuContent>
@@ -1308,6 +1345,41 @@ export default function PropertyDetailPage() {
 
             {/* Modals (e.g., Image Upload) */}
             {/* <Dialog open={showImageModal} onOpenChange={setShowImageModal}> ... </Dialog> */}
+
+            {/* Modal de confirmación para eliminar */}
+            {showDeleteModal && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg max-w-md w-full p-6 shadow-xl">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Confirmar eliminación</h3>
+                        <p className="text-gray-600 mb-6">
+                            ¿Está seguro que desea eliminar esta propiedad? Esta acción no se puede deshacer.
+                        </p>
+                        <div className="flex justify-end gap-3">
+                            <Button 
+                                variant="outline" 
+                                onClick={() => setShowDeleteModal(false)}
+                                disabled={isDeleting}
+                            >
+                                Cancelar
+                            </Button>
+                            <Button 
+                                onClick={handleDeleteProperty} 
+                                disabled={isDeleting}
+                                className="bg-red-600 hover:bg-red-700 text-white"
+                            >
+                                {isDeleting ? (
+                                    <>
+                                        <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
+                                        Eliminando...
+                                    </>
+                                ) : (
+                                    'Eliminar'
+                                )}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
         </motion.div>
     );
