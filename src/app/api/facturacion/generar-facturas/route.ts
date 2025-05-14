@@ -17,6 +17,7 @@ type GenerarFacturasRequest = {
   proyectoId: number;
   servicioId: number;
   periodo: string; // Formato YYYY-MM
+  propiedadesIds?: number[]; // IDs de propiedades específicas (opcional)
 };
 
 export async function POST(request: Request) {
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
     }
     
     console.log("API /api/facturacion/generar-facturas: Parsed request data:", data);
-    const { proyectoId, servicioId, periodo } = data;
+    const { proyectoId, servicioId, periodo, propiedadesIds } = data;
     
     // Validaciones
     if (!proyectoId || !servicioId || !periodo) {
@@ -72,7 +73,7 @@ export async function POST(request: Request) {
     }
     
     // 3. Obtener propiedades del proyecto
-    const { data: propiedades, error: propiedadesError } = await supabaseAdmin
+    let query = supabaseAdmin
       .from('propiedades')
       .select(`
         id, estado_uso, monto_alicuota_ordinaria, area_total, encargado_pago,
@@ -91,11 +92,32 @@ export async function POST(request: Request) {
       `)
       .eq('proyecto_id', proyectoId);
       
+    // Si hay propiedades específicas, filtrar solo por esas
+    if (propiedadesIds && propiedadesIds.length > 0) {
+      query = query.in('id', propiedadesIds);
+      console.log(`API /api/facturacion/generar-facturas: Filtrando por propiedades específicas: ${propiedadesIds.join(', ')}`);
+    }
+      
+    const { data: propiedades, error: propiedadesError } = await query;
+      
     if (propiedadesError) {
       return NextResponse.json({ 
         success: false, 
         message: `Error al obtener propiedades: ${propiedadesError.message}` 
       }, { status: 500 });
+    }
+    
+    // Si no hay propiedades que procesar
+    if (!propiedades || propiedades.length === 0) {
+      return NextResponse.json({
+        success: true,
+        generadas: 0,
+        omitidas: 0,
+        errores: 0,
+        message: propiedadesIds && propiedadesIds.length > 0 
+          ? 'No se encontraron propiedades con los IDs proporcionados' 
+          : 'No hay propiedades en este proyecto'
+      });
     }
     
     // 4. Procesar cada propiedad y crear facturas borrador

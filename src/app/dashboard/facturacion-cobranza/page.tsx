@@ -40,6 +40,14 @@ import ConfiguracionFacturacionModal from "@/app/_components/ConfiguracionFactur
 import { recalcularFactura } from "@/app/_utils/facturacionHelpers";
 import ConfirmApprovalModal from "@/app/_components/ConfirmApprovalModal";
 import { Progress } from "@/components/ui/progress";
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle,
+  DialogFooter
+} from "@/app/_components/ui/dialog";
+import { CheckCircleIcon as CheckCircleSolidIcon } from "@heroicons/react/24/solid";
 
 // Tipos
 type Proyecto = {
@@ -104,6 +112,17 @@ type Factura = {
     id: number;
     nombre: string;
   };
+};
+
+type Propiedad = {
+  id: number;
+  identificadores: any;
+  estado_uso?: string;
+  monto_alicuota_ordinaria?: number;
+  area_total?: number;
+  encargado_pago?: string;
+  propietario?: any; // Usar any por ahora para evitar problemas con la estructura anidada
+  ocupante?: any; // Usar any por ahora para evitar problemas con la estructura anidada
 };
 
 export default function FacturacionPage() {
@@ -173,8 +192,15 @@ export default function FacturacionPage() {
   } | null>(null);
   const [batchErrorsDetails, setBatchErrorsDetails] = useState<string[]>([]);
   
+  // Estados para selección de propiedades
+  const [propiedades, setPropiedades] = useState<Propiedad[]>([]);
+  const [propiedadesSeleccionadas, setPropiedadesSeleccionadas] = useState<number[]>([]);
+  const [loadingPropiedades, setLoadingPropiedades] = useState(false);
+  const [showPropiedadesModal, setShowPropiedadesModal] = useState(false);
+  const [searchPropiedades, setSearchPropiedades] = useState("");
+  
   // Verificar si todos los datos iniciales están cargados
-  const isInitialDataLoading = loadingProyectos || loadingServicios;
+  const isInitialDataLoading = loadingProyectos || loadingServicios || loadingPropiedades;
   
   // Cargar proyectos y servicios al iniciar
   useEffect(() => {
@@ -193,6 +219,13 @@ export default function FacturacionPage() {
   useEffect(() => {
     console.log("Periodo actual:", getPeriodo());
   }, [mes, ano]);
+  
+  // Cargar propiedades cuando cambia el proyecto seleccionado
+  useEffect(() => {
+    if (selectedProyecto) {
+      fetchPropiedades();
+    }
+  }, [selectedProyecto]);
   
   // Funciones para cargar datos
   const fetchProyectos = async () => {
@@ -344,6 +377,7 @@ export default function FacturacionPage() {
     console.log("Proyecto ID:", selectedProyecto);
     console.log("Servicio ID/Código:", selectedServicio);
     console.log("Periodo:", getPeriodo());
+    console.log("Propiedades seleccionadas:", propiedadesSeleccionadas);
     
     setIsGenerating(true);
     try {
@@ -360,6 +394,7 @@ export default function FacturacionPage() {
         proyectoId: parseInt(selectedProyecto),
         servicioId: servicioSeleccionado.id,
         periodo: periodo,
+        propiedadesIds: propiedadesSeleccionadas.length > 0 ? propiedadesSeleccionadas : undefined
       };
 
       console.log("Enviando a API /api/facturacion/generar-facturas, Payload:", JSON.stringify(payload));
@@ -1065,6 +1100,76 @@ export default function FacturacionPage() {
       throw error;
     }
   };
+  
+  // Función para cargar propiedades del proyecto seleccionado
+  const fetchPropiedades = async () => {
+    if (!selectedProyecto) return;
+    
+    setLoadingPropiedades(true);
+    try {
+      const { data, error } = await supabase
+        .from("propiedades")
+        .select(`
+          id, estado_uso, monto_alicuota_ordinaria, area_total, encargado_pago,
+          identificadores,
+          propietario:perfiles_cliente!propietario_id (
+            id, tipo_persona,
+            persona_natural:persona_natural_id (razon_social),
+            persona_juridica:persona_juridica_id (razon_social)
+          ),
+          ocupante:perfiles_cliente!ocupante_id (
+            id, tipo_persona,
+            persona_natural:persona_natural_id (razon_social),
+            persona_juridica:persona_juridica_id (razon_social)
+          )
+        `)
+        .eq("proyecto_id", selectedProyecto);
+        
+      if (error) throw error;
+      setPropiedades(data || []);
+    } catch (error: any) {
+      console.error("Error al cargar propiedades:", error.message);
+    } finally {
+      setLoadingPropiedades(false);
+    }
+  };
+  
+  // Filtrar propiedades según búsqueda
+  const propiedadesFiltradas = useMemo(() => {
+    if (!searchPropiedades) return propiedades;
+    
+    const lowerSearch = searchPropiedades.toLowerCase();
+    return propiedades.filter(propiedad => {
+      const identificador = formatPropertyIdentifier(propiedad.identificadores).toLowerCase();
+      return identificador.includes(lowerSearch);
+    });
+  }, [propiedades, searchPropiedades]);
+  
+  // Alternar selección de propiedad
+  const togglePropiedadSelection = (propiedadId: number) => {
+    setPropiedadesSeleccionadas(prev => {
+      if (prev.includes(propiedadId)) {
+        return prev.filter(id => id !== propiedadId);
+      } else {
+        return [...prev, propiedadId];
+      }
+    });
+  };
+  
+  // Seleccionar/deseleccionar todas las propiedades
+  const toggleSelectAllPropiedades = () => {
+    if (propiedadesSeleccionadas.length === propiedadesFiltradas.length) {
+      setPropiedadesSeleccionadas([]);
+    } else {
+      setPropiedadesSeleccionadas(propiedadesFiltradas.map(p => p.id));
+    }
+  };
+  
+  // Función para abrir modal de selección de propiedades
+  const openSelectPropiedadesModal = () => {
+    setSearchPropiedades("");
+    setShowPropiedadesModal(true);
+  };
 
   return (
     <div className="space-y-6">
@@ -1167,7 +1272,20 @@ export default function FacturacionPage() {
                 </div>
               </div>
               
-              <div className="flex items-end">
+              <div className="flex flex-col items-start justify-end">
+                <Button
+                  variant="outline"
+                  onClick={openSelectPropiedadesModal}
+                  disabled={isGenerating || !selectedProyecto || isInitialDataLoading}
+                  className="mb-2 w-full"
+                >
+                  {propiedadesSeleccionadas.length > 0 ? (
+                    <>Propiedades seleccionadas ({propiedadesSeleccionadas.length})</>
+                  ) : (
+                    <>Seleccionar propiedades</>
+                  )}
+                </Button>
+                
                 <Button
                   onClick={generarFacturas}
                   disabled={isGenerating || !selectedProyecto || !selectedServicio || isInitialDataLoading}
@@ -1713,6 +1831,133 @@ export default function FacturacionPage() {
         isLoading={isApprovingFacturas || isBatchProcessing}
         facturaCount={selectedFacturas.length}
       />
+      
+      {/* Modal para seleccionar propiedades */}
+      <Dialog open={showPropiedadesModal} onOpenChange={setShowPropiedadesModal}>
+        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Seleccionar Propiedades</DialogTitle>
+          </DialogHeader>
+          
+          <div className="relative max-w-md mb-4">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+            </div>
+            <Input
+              className="h-10 pl-10"
+              placeholder="Buscar propiedades..."
+              value={searchPropiedades}
+              onChange={e => setSearchPropiedades(e.target.value)}
+            />
+            {searchPropiedades && (
+              <div className="absolute right-3 top-1/4 transform -translate-y-1/2">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-5 w-5 p-0" 
+                  onClick={() => setSearchPropiedades('')}
+                >
+                  <XMarkIcon className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex justify-between items-center mb-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={toggleSelectAllPropiedades}
+            >
+              {propiedadesSeleccionadas.length === propiedadesFiltradas.length && propiedadesFiltradas.length > 0 ? 'Deseleccionar todo' : 'Seleccionar todo'}
+            </Button>
+            <span className="text-sm text-gray-500">
+              {propiedadesSeleccionadas.length} de {propiedades.length} propiedades seleccionadas
+            </span>
+          </div>
+          
+          <div className="flex-1 border rounded-md p-2 overflow-auto">
+            {loadingPropiedades ? (
+              <div className="space-y-2 p-2">
+                {[1, 2, 3, 4, 5].map(i => (
+                  <div key={i} className="flex items-center space-x-2">
+                    <Skeleton className="h-5 w-5 rounded-full" />
+                    <Skeleton className="h-4 flex-1" />
+                  </div>
+                ))}
+              </div>
+            ) : propiedadesFiltradas.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                {searchPropiedades ? (
+                  <p>No se encontraron propiedades con "{searchPropiedades}"</p>
+                ) : (
+                  <p>No hay propiedades disponibles</p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {propiedadesFiltradas.map(propiedad => {
+                  const isSelected = propiedadesSeleccionadas.includes(propiedad.id);
+                  const identificador = formatPropertyIdentifier(propiedad.identificadores);
+                  
+                  // Determinar responsable de pago
+                  let responsable = null;
+                  if (propiedad.encargado_pago) {
+                    responsable = propiedad.encargado_pago === 'Propietario' 
+                      ? propiedad.propietario 
+                      : propiedad.ocupante;
+                  }
+                  
+                  const nombreResponsable = responsable ? (
+                    responsable.tipo_persona === 'Natural'
+                      ? responsable.persona_natural?.razon_social
+                      : responsable.persona_juridica?.razon_social
+                  ) : '-';
+                  
+                  return (
+                    <div 
+                      key={propiedad.id}
+                      className={`flex items-center p-2 rounded cursor-pointer transition-colors ${
+                        isSelected 
+                          ? 'bg-emerald-50 border border-emerald-200' 
+                          : 'hover:bg-gray-50 border border-transparent'
+                      }`}
+                      onClick={() => togglePropiedadSelection(propiedad.id)}
+                    >
+                      <div className="flex h-6 w-6 items-center justify-center mr-2">
+                        {isSelected ? (
+                          <CheckCircleSolidIcon className="h-5 w-5 text-emerald-600" />
+                        ) : (
+                          <div className="h-5 w-5 rounded-full border-2 border-gray-300" />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-sm">{identificador}</div>
+                        <div className="text-xs text-gray-500">
+                          {nombreResponsable}
+                          {propiedad.area_total ? ` • ${propiedad.area_total} m²` : ''}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setShowPropiedadesModal(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={() => setShowPropiedadesModal(false)}
+              className="bg-[#008A4B] hover:bg-[#006837]"
+            >
+              Aceptar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 } 
