@@ -117,9 +117,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // --- Efecto Principal para Manejar Estado de Autenticación y Rol --- 
   useEffect(() => {
     let isMounted = true; // Flag para evitar actualizaciones en componente desmontado
+    
+    // Agregar estado de la última sesión conocida para comparar
+    let lastKnownSessionId: string | null = null;
 
-    const handleAuthChange = async (session: Session | null) => {
+    const handleAuthChange = async (session: Session | null, force: boolean = false) => {
       if (!isMounted) return;
+      
+      // Comprobar si la sesión ha cambiado realmente
+      const currentSessionId = session?.user?.id || null;
+      
+      // Si la sesión no ha cambiado (mismo usuario o ambos null) y no estamos forzando la actualización, ignorar
+      if (!force && currentSessionId === lastKnownSessionId) {
+        console.log("Session hasn't changed, skipping redundant auth state update");
+        return;
+      }
+      
+      // Actualizar el ID de sesión conocido
+      lastKnownSessionId = currentSessionId;
+      
       console.log("Auth state changed, new session:", session)
       
       setIsLoading(true);
@@ -157,7 +173,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // 1. Obtener sesión inicial
     supabase.auth.getSession().then(({ data: { session } }) => {
       console.log("Initial getSession result:", session)
-      handleAuthChange(session);
+      // Forzar la actualización inicial
+      handleAuthChange(session, true);
     }).catch(err => {
        console.error("Error in initial getSession:", err)
        if(isMounted) {
@@ -168,8 +185,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // 2. Suscribirse a cambios futuros
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event: AuthChangeEvent, session: Session | null) => {
-        console.log(`onAuthStateChange event: ${_event}`) 
-        handleAuthChange(session);
+        // Solo registrar eventos reales de cambio de autenticación (SIGNED_IN, SIGNED_OUT)
+        if (_event === 'SIGNED_IN' || _event === 'SIGNED_OUT' || _event === 'USER_UPDATED' || _event === 'TOKEN_REFRESHED') {
+          console.log(`onAuthStateChange event: ${_event}`)
+          handleAuthChange(session);
+        } else {
+          // Para otros eventos (como 'INITIAL_SESSION'), solo registrar sin procesar
+          console.log(`Ignored auth event: ${_event} (no state change needed)`)
+        }
       }
     )
 
