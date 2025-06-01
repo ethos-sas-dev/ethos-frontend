@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
-import { Database } from '../../../../../../supabase-ethos-types';
+import { Database } from '../../../../../../ethos-types';
 
 export async function POST(
   request: NextRequest,
-  routeArgs: { params: { ticketId: string } }
+  { params }: { params: Promise<{ ticketId: string }> }
 ) {
   try {
     const { estado } = await request.json();
-    const resolvedParams = await routeArgs.params; // Aseguramos que params se resuelva
-    const ticketIdStr = resolvedParams.ticketId;
+    const { ticketId: ticketIdStr } = await params;
 
     const ticketId = parseInt(ticketIdStr);
 

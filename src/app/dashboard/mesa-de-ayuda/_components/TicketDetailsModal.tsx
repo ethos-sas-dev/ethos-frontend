@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/app/_components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/_components/ui/card';
 import { CalendarDays, User, Building, AlertTriangle, Plus, MessageSquare } from 'lucide-react';
-import { Database } from "../../../../../supabase-ethos-types";
+import { Database } from "../../../../../ethos-types";
 
 // Definición del tipo para una Acción Correctiva
 type AccionCorrectivaItem = {

@@ -1,7 +1,7 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { Database } from '../../../../../../supabase-ethos-types'; // Corregida la ruta de importación
+import { Database } from '../../../../../../ethos-types'; // Corregida la ruta de importación
 
 // Tipos para la acción correctiva
 type AccionCorrectivaInput = {
@@ -17,11 +17,10 @@ type AccionCorrectivaStored = {
 
 export async function POST(
   request: Request,
-  routeArgs: { params: { ticketId: string } }
+  { params }: { params: Promise<{ ticketId: string }> }
 ) {
   const supabase = createRouteHandlerClient<Database>({ cookies });
-  const resolvedParams = await routeArgs.params; // Aseguramos que params se resuelva
-  const ticketIdStr = resolvedParams.ticketId;
+  const { ticketId: ticketIdStr } = await params;
 
   if (!ticketIdStr || isNaN(parseInt(ticketIdStr))) {
     return NextResponse.json({ error: 'Ticket ID es requerido y debe ser un número' }, { status: 400 });

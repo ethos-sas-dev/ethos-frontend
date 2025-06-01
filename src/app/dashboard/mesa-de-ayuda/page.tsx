@@ -17,7 +17,7 @@ import { Skeleton } from "@/app/_components/ui/skeleton";
 import { AlertCircle, PlusCircle, Eye } from "lucide-react";
 import { Alert, AlertDescription } from "@/app/_components/ui/alert";
 import Link from "next/link";
-import { Database } from "../../../../supabase-ethos-types";
+import { Database } from "../../../../ethos-types";
 import { TicketDetailsModal } from "./_components/TicketDetailsModal";
 
 // Definición del tipo para una Acción Correctiva
