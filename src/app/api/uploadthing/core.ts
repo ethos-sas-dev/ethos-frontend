@@ -105,6 +105,35 @@ export const ourFileRouter = {
       return { uploadedBy: metadata.userId, fileKey: file.key };
     }),
 
+  // Endpoint para comprobantes de pago
+  paymentProof: f({
+    pdf: { maxFileSize: "4MB", maxFileCount: 1 },
+    image: { maxFileSize: "4MB", maxFileCount: 1 }, // Permitir imágenes o PDFs
+  })
+    .middleware(async ({ req }) => {
+      const user = await auth(req);
+      if (!user || !user.id) throw new UploadThingError("Unauthorized");
+      
+      const facturaId = req.headers.get("x-factura-id");
+      return { 
+        userId: user.id,
+        facturaId: facturaId 
+      };
+    })
+    .onUploadComplete(async ({ metadata, file }) => {
+      console.log("[PaymentProof] Upload complete for userId:", metadata.userId);
+      console.log("[PaymentProof] factura ID:", metadata.facturaId);
+      console.log("[PaymentProof] file url:", file.url);
+      console.log("[PaymentProof] file key:", file.key);
+      
+      return { 
+        uploadedBy: metadata.userId, 
+        facturaId: metadata.facturaId,
+        fileUrl: file.url,
+        fileKey: file.key 
+      };
+    }),
+
   // >>> NUEVO ENDPOINT PARA IMÁGENES DE PROYECTO <<<
   projectImage: f({
     image: { 

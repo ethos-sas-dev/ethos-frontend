@@ -138,6 +138,11 @@ export const menuItems: Record<UserRole, MenuItems['items']> = {
       href: "/dashboard/mis-documentos"
     },
     {
+      title: "Mis Facturas",
+      icon: CurrencyDollarIcon,
+      href: "/dashboard/mis-facturas"
+    },
+    {
       title: "Perfil",
       icon: UserCircle,
       href: "/dashboard/perfil"
@@ -168,6 +173,11 @@ export const menuItems: Record<UserRole, MenuItems['items']> = {
       title: "Mis Documentos",
       icon: DocumentTextIcon,
       href: "/dashboard/mis-documentos"
+    },
+    {
+      title: "Mis Facturas",
+      icon: CurrencyDollarIcon,
+      href: "/dashboard/mis-facturas"
     },
     {
       title: "Perfil",
