@@ -7,6 +7,7 @@ import { UserRole } from '../_lib/types'
 import { menuItems } from '../_lib/menus'
 import ProtectedRoute from '../_components/ProtectedRoute'
 import Sidebar from '../_components/Sidebar'
+import NotificationProvider from '../_components/ui/notification-provider'
 import { useState } from 'react'
 
 export default function DashboardLayout({
@@ -54,6 +55,7 @@ export default function DashboardLayout({
           <main className="p-8 min-h-screen">{children}</main>
         </motion.div>
       </div>
+      <NotificationProvider />
     </ProtectedRoute>
   )
 } 

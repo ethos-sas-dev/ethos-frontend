@@ -155,7 +155,7 @@ export function EmailList({
                     <DropdownMenuContent align="end">
                       {email.status !== 'necesitaAtencion' && (
                         <DropdownMenuItem 
-                          onClick={() => onUpdateStatus?.(email.emailId, 'necesitaAtencion')}
+                          onClick={() => onUpdateStatus?.(email.id, 'necesitaAtencion')}
                         >
                           <AlertTriangle className="mr-2 h-4 w-4" />
                           Marcar como Necesita Atención
@@ -164,8 +164,8 @@ export function EmailList({
                       {email.status !== 'informativo' && (
                         <DropdownMenuItem 
                           onClick={() => {
-                            onMarkAsInformative?.(email.emailId);
-                            onUpdateStatus?.(email.emailId, 'informativo');
+                            onMarkAsInformative?.(email.id);
+                            onUpdateStatus?.(email.id, 'informativo');
                           }}
                         >
                           <Info className="mr-2 h-4 w-4" />
@@ -175,8 +175,8 @@ export function EmailList({
                       {email.status !== 'respondido' && (
                         <DropdownMenuItem 
                           onClick={() => {
-                            onMarkAsResponded?.(email.emailId);
-                            onUpdateStatus?.(email.emailId, 'respondido');
+                            onMarkAsResponded?.(email.id);
+                            onUpdateStatus?.(email.id, 'respondido');
                           }}
                         >
                           <CheckCircle className="mr-2 h-4 w-4" />

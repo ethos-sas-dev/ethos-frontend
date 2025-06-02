@@ -293,12 +293,12 @@ export async function GET() {
       // Solo actualizar si el estado ha cambiado
       if (factura.estado !== estadoFinal) {
         console.log(`[verificarPagos] Actualizando factura ID: ${factura.id} de estado: ${factura.estado} a estado: ${estadoFinal}`);
-        await supabase
-          .from('facturas')
-          .update({ estado: estadoFinal })
-          .eq('id', factura.id);
+      await supabase
+        .from('facturas')
+        .update({ estado: estadoFinal })
+        .eq('id', factura.id);
         
-        actualizados++;
+      actualizados++;
       } else {
         console.log(`[verificarPagos] Factura ID: ${factura.id} mantiene estado: ${estadoFinal}`);
       }

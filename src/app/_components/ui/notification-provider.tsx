@@ -31,27 +31,41 @@ export default function NotificationProvider() {
     // Función para manejar eventos de notificación
     const handleShowNotification = (event: Event) => {
       const customEvent = event as CustomNotificationEvent;
-      const { type, title, message, duration = 3000 } = customEvent.detail;
+      const { type, title, message, duration = 4000 } = customEvent.detail;
       
-      // Ocultar cualquier notificación existente primero
-      setVisible(false);
-      
-      // Limpiar cualquier timer existente
-      const timerId = window.setTimeout(() => {
-        // Configurar la nueva notificación
+      // Si ya hay una notificación visible, ocultarla primero
+      if (notification && visible) {
+        setVisible(false);
+        setTimeout(() => {
+          // Configurar la nueva notificación
+          setNotification({ type, title, message });
+          setVisible(true);
+          
+          // Auto ocultar después del tiempo especificado
+          setTimeout(() => {
+            setVisible(false);
+            
+            // Eliminar completamente la notificación después de la transición
+            setTimeout(() => {
+              setNotification(null);
+            }, 300);
+          }, duration);
+        }, 300);
+      } else {
+        // No hay notificación previa, mostrar inmediatamente
         setNotification({ type, title, message });
         setVisible(true);
         
         // Auto ocultar después del tiempo especificado
-        window.setTimeout(() => {
+        setTimeout(() => {
           setVisible(false);
           
           // Eliminar completamente la notificación después de la transición
-          window.setTimeout(() => {
+          setTimeout(() => {
             setNotification(null);
-          }, 300); // Esperar a que termine la transición
+          }, 300);
         }, duration);
-      }, notification ? 300 : 0); // Esperar solo si hay una notificación previa
+      }
     };
     
     // Escuchar el evento personalizado
@@ -60,7 +74,7 @@ export default function NotificationProvider() {
     return () => {
       window.removeEventListener('showNotification', handleShowNotification);
     };
-  }, [notification]);
+  }, [notification, visible]);
   
   // No renderizar nada si no hay notificación
   if (!notification) return null;

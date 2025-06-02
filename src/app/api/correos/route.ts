@@ -171,7 +171,7 @@ async function getEmailsFromStrapi(): Promise<ProcessedEmail[]> {
       
       // Crear y retornar la entidad de email procesada con campos limpios
       return {
-        id: track.documentId,
+        id: track.documentId, // documentId alfanumérico de Strapi 5
         emailId: track.emailId,
         from: cleanEmailString(track.from),
         to: cleanEmailString(track.to || ''),

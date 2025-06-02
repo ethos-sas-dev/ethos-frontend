@@ -64,7 +64,7 @@ export function EmailModal({ isOpen, onClose, email, onUpdateStatus }: EmailModa
   };
 
   const handleStatusChange = (newStatus: "necesitaAtencion" | "informativo" | "respondido") => {
-    onUpdateStatus(email.emailId, newStatus);
+    onUpdateStatus(email.id, newStatus);
     onClose();
   };
 

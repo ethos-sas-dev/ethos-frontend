@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../../../../lib/supabase/client";
 import {
@@ -67,6 +67,9 @@ export default function CorreosPage() {
   const [isLocalRefreshing, setIsLocalRefreshing] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  
+  // Ref para evitar toasts duplicados
+  const lastToastRef = useRef<string | null>(null);
   
   // Usar el hook de emails con SWR
   const { 
@@ -285,8 +288,59 @@ export default function CorreosPage() {
 
   // Función para manejar actualizaciones de estado
   const handleUpdateStatus = async (emailId: string, newStatus: EmailStatus) => {
-    await updateEmail(emailId, { status: newStatus });
-    setLastUpdated(new Date());
+    const success = await updateEmail(emailId, { status: newStatus });
+    
+    // Crear un identificador único para este toast
+    const toastId = `${emailId}-${newStatus}-${Date.now()}`;
+    
+    if (success) {
+      setLastUpdated(new Date());
+      
+      // Verificar si ya se mostró un toast muy reciente para evitar duplicados
+      if (lastToastRef.current !== `${emailId}-${newStatus}`) {
+        lastToastRef.current = `${emailId}-${newStatus}`;
+        
+        // Mostrar toast de éxito
+        setTimeout(() => {
+          dispatchEvent(
+            new CustomEvent('showNotification', {
+              detail: {
+                type: 'success',
+                title: 'Estado actualizado',
+                message: `El correo ha sido marcado como ${newStatus === 'necesitaAtencion' ? 'Necesita Atención' : newStatus === 'informativo' ? 'Informativo' : 'Respondido'}`
+              }
+            })
+          );
+        }, 100);
+        
+        // Limpiar la referencia después de un tiempo
+        setTimeout(() => {
+          lastToastRef.current = null;
+        }, 1000);
+      }
+    } else {
+      // Mostrar toast de error (solo si no hay un toast reciente)
+      if (lastToastRef.current !== `error-${emailId}`) {
+        lastToastRef.current = `error-${emailId}`;
+        
+        setTimeout(() => {
+          dispatchEvent(
+            new CustomEvent('showNotification', {
+              detail: {
+                type: 'error',
+                title: 'Error al actualizar',
+                message: 'No se pudo actualizar el estado del correo'
+              }
+            })
+          );
+        }, 100);
+        
+        // Limpiar la referencia después de un tiempo
+        setTimeout(() => {
+          lastToastRef.current = null;
+        }, 1000);
+      }
+    }
   };
 
   // Función para abrir email
@@ -366,14 +420,14 @@ export default function CorreosPage() {
         <h1 className="text-2xl font-bold mb-2">Acceso restringido</h1>
         <p className="text-gray-600 max-w-md">
           Este módulo solo está disponible para usuarios con rol de Administrador.
-        </p>
+            </p>
         <Button 
           className="mt-6" 
           onClick={() => router.push('/dashboard')}
         >
           Volver al dashboard
         </Button>
-      </div>
+          </div>
     );
   }
 
