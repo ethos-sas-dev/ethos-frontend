@@ -157,6 +157,37 @@ export const ourFileRouter = {
       
       return { uploadedBy: metadata.userId, fileKey: file.key, url: file.url };
     }),
+
+  // >>> NUEVO ENDPOINT PARA IMÁGENES DE ACCIONES CORRECTIVAS <<<
+  ticketActionImage: f({
+    image: { 
+      maxFileSize: "4MB", 
+      maxFileCount: 1 
+    }
+  })
+    .middleware(async ({ req }) => {
+      const user = await auth(req);
+      if (!user || !user.id) throw new UploadThingError("Unauthorized");
+      
+      const ticketId = req.headers.get("x-ticket-id");
+      return { 
+        userId: user.id,
+        ticketId: ticketId 
+      };
+    })
+    .onUploadComplete(async ({ metadata, file }) => {
+      console.log("[TicketActionImage] Upload complete for userId:", metadata.userId);
+      console.log("[TicketActionImage] ticket ID:", metadata.ticketId);
+      console.log("[TicketActionImage] file url:", file.url);
+      console.log("[TicketActionImage] file key:", file.key);
+      
+      return { 
+        uploadedBy: metadata.userId, 
+        ticketId: metadata.ticketId,
+        fileUrl: file.url,
+        fileKey: file.key 
+      };
+    }),
 } satisfies FileRouter;
 
 export type OurFileRouter = typeof ourFileRouter; 

@@ -8,7 +8,9 @@ import { Label } from '@/app/_components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/_components/ui/select';
 import { Badge } from '@/app/_components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/_components/ui/card';
-import { CalendarDays, User, Building, AlertTriangle, Plus, MessageSquare } from 'lucide-react';
+import { CalendarDays, User, Building, AlertTriangle, Plus, MessageSquare, Upload, X, Image } from 'lucide-react';
+import { UploadButton } from "@uploadthing/react";
+import type { OurFileRouter } from "../../../api/uploadthing/core";
 import { Database } from "../../../../../ethos-types";
 
 // Definición del tipo para una Acción Correctiva
@@ -60,6 +62,11 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+  // Estados para manejo de imágenes
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [showImageUpload, setShowImageUpload] = useState(false);
+
   useEffect(() => {
     if (isOpen) {
       setSelectedStatus(ticket.estado || null);
@@ -67,6 +74,10 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
       setShowAddAction(false);
       setIsSubmittingAction(false);
       setIsUpdatingStatus(false);
+      // Reset estados de imagen
+      setUploadedImageUrl(null);
+      setIsUploadingImage(false);
+      setShowImageUpload(false);
     } 
   }, [isOpen, ticket]);
 
@@ -171,7 +182,7 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
     const newAction: AccionCorrectivaItem = {
       fecha: new Date().toISOString(), // Usar fecha actual para UI
       descripcion: newActionDescription.trim(),
-      imagen_url: null, // Asumimos que la carga de imagen se maneja por separado si se implementa
+      imagen_url: uploadedImageUrl, // Incluir la imagen subida
     };
 
     // Actualización optimista local
@@ -184,6 +195,8 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
     onTicketUpdated(optimisticTicket);
     setNewActionDescription('');
     setShowAddAction(false);
+    setUploadedImageUrl(null); // Reset imagen
+    setShowImageUpload(false); // Reset UI de imagen
     // El estado del ticket (selectedStatus) también podría necesitar ser actualizado aquí si cambia
     if (optimisticTicket.estado !== selectedStatus) {
       setSelectedStatus(optimisticTicket.estado);
@@ -194,7 +207,10 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
       const response = await fetch(`/api/tickets/${ticket.id}/add-corrective-action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ descripcion: newActionDescription.trim(), imagen_url: null }), // Enviar solo lo necesario a la API
+        body: JSON.stringify({ 
+          descripcion: newActionDescription.trim(), 
+          imagen_url: uploadedImageUrl // Enviar la imagen a la API
+        }),
       });
 
       const updatedTicketData = await response.json();
@@ -435,6 +451,105 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
                     className="mt-2"
                     rows={3}
                   />
+                  
+                  {/* Sección de imagen */}
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <Label className="text-sm font-medium">Imagen (opcional):</Label>
+                      {!showImageUpload && !uploadedImageUrl && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowImageUpload(true)}
+                          className="flex items-center gap-2"
+                        >
+                          <Image className="h-4 w-4" />
+                          Añadir Imagen
+                        </Button>
+                      )}
+                    </div>
+                    
+                    {/* UploadButton */}
+                    {showImageUpload && !uploadedImageUrl && (
+                      <div className="border-dashed border-2 border-gray-300 rounded-lg p-4 text-center">
+                        <UploadButton<OurFileRouter, "ticketActionImage">
+                          endpoint="ticketActionImage"
+                          onClientUploadComplete={(res) => {
+                            if (res && res.length > 0) {
+                              setUploadedImageUrl(res[0].url);
+                              setIsUploadingImage(false);
+                              setShowImageUpload(false);
+                              console.log("Imagen subida exitosamente:", res[0].url);
+                            }
+                          }}
+                          onUploadError={(error) => {
+                            console.error("Error al subir imagen:", error);
+                            setIsUploadingImage(false);
+                            alert(`Error al subir imagen: ${error.message}`);
+                          }}
+                          onUploadBegin={() => {
+                            setIsUploadingImage(true);
+                          }}
+                          appearance={{
+                            button: "border border-gray-300 !text-gray-700 hover:bg-gray-50 text-xs font-medium px-4 py-2 rounded-md transition-all flex items-center gap-2 bg-white",
+                            allowedContent: "text-xs text-gray-500 mt-2"
+                          }}
+                          content={{
+                            button({ ready }) {
+                              if (isUploadingImage) return "Subiendo...";
+                              if (!ready) return "Cargando...";
+                              return (
+                                <>
+                                  <Upload className="h-4 w-4" />
+                                  Seleccionar Imagen
+                                </>
+                              );
+                            },
+                            allowedContent: "Imágenes hasta 4MB"
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowImageUpload(false)}
+                          className="ml-2 mt-2"
+                        >
+                          <X className="h-4 w-4" />
+                          Cancelar
+                        </Button>
+                      </div>
+                    )}
+                    
+                    {/* Imagen previa */}
+                    {uploadedImageUrl && (
+                      <div className="border rounded-lg p-3 bg-green-50">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-green-700">Imagen añadida</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setUploadedImageUrl(null);
+                              setShowImageUpload(false);
+                            }}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <img 
+                          src={uploadedImageUrl} 
+                          alt="Imagen de acción correctiva" 
+                          className="max-h-24 rounded border cursor-pointer hover:opacity-80" 
+                          onClick={() => window.open(uploadedImageUrl, '_blank')}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  
                   <div className="flex gap-2 mt-3">
                     <Button 
                       onClick={handleAddAction} 
@@ -448,6 +563,8 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
                       onClick={() => {
                         setShowAddAction(false);
                         setNewActionDescription('');
+                        setUploadedImageUrl(null);
+                        setShowImageUpload(false);
                       }}
                       size="sm"
                     >

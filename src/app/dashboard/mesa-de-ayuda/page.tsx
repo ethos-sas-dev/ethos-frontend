@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { createClient } from "../../../../lib/supabase/client";
 import { Badge } from "@/app/_components/ui/badge";
 import { Button } from "@/app/_components/ui/button";
@@ -19,6 +19,7 @@ import { Alert, AlertDescription } from "@/app/_components/ui/alert";
 import Link from "next/link";
 import { Database } from "../../../../ethos-types";
 import { TicketDetailsModal } from "./_components/TicketDetailsModal";
+import { TicketStats } from "./_components/TicketStats";
 
 // Definición del tipo para una Acción Correctiva
 export type AccionCorrectivaItem = {
@@ -65,6 +66,34 @@ export default function MesaDeAyudaPage() {
   // Estados para el modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+
+  // Calcular estadísticas de tickets
+  const ticketStats = useMemo(() => {
+    const stats = {
+      total: tickets.length,
+      abierto: 0,
+      en_progreso: 0,
+      cerrado: 0,
+    };
+
+    tickets.forEach((ticket) => {
+      switch (ticket.estado) {
+        case 'abierto':
+          stats.abierto++;
+          break;
+        case 'en_progreso':
+          stats.en_progreso++;
+          break;
+        case 'cerrado':
+          stats.cerrado++;
+          break;
+        default:
+          break;
+      }
+    });
+
+    return stats;
+  }, [tickets]);
 
   useEffect(() => {
     async function fetchTickets() {
@@ -246,6 +275,8 @@ export default function MesaDeAyudaPage() {
           </Button>
         </Link>
       </div>
+
+      <TicketStats stats={ticketStats} />
 
       {error && (
         <Alert variant="destructive">
