@@ -256,7 +256,6 @@ export type Database = {
           observaciones: string | null
           periodo: string | null
           propiedad_id: number | null
-          retencion: number | null
           subtotal: number | null
           total: number | null
           updated_at: string | null
@@ -279,7 +278,6 @@ export type Database = {
           observaciones?: string | null
           periodo?: string | null
           propiedad_id?: number | null
-          retencion?: number | null
           subtotal?: number | null
           total?: number | null
           updated_at?: string | null
@@ -302,7 +300,6 @@ export type Database = {
           observaciones?: string | null
           periodo?: string | null
           propiedad_id?: number | null
-          retencion?: number | null
           subtotal?: number | null
           total?: number | null
           updated_at?: string | null
@@ -962,6 +959,36 @@ export type Database = {
         }
         Relationships: []
       }
+      categoria_vencimientos: {
+        Row: {
+          id: number
+          categoria: Database["public"]["Enums"]["ticket_categoria"]
+          dias_vencimiento: number
+          descripcion: string | null
+          activo: boolean | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: number
+          categoria: Database["public"]["Enums"]["ticket_categoria"]
+          dias_vencimiento: number
+          descripcion?: string | null
+          activo?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: number
+          categoria?: Database["public"]["Enums"]["ticket_categoria"]
+          dias_vencimiento?: number
+          descripcion?: string | null
+          activo?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       ticket_archivo_links: {
         Row: {
           archivo_id: number
@@ -1000,8 +1027,8 @@ export type Database = {
           acciones_correctivas: Json | null
           asignado_a: string | null
           created_at: string | null
-          departamento:
-            | Database["public"]["Enums"]["ticket_departamento"]
+          categoria:
+            | Database["public"]["Enums"]["ticket_categoria"]
             | null
           descripcion: string | null
           estado: Database["public"]["Enums"]["ticket_estado"] | null
@@ -1018,8 +1045,8 @@ export type Database = {
           acciones_correctivas?: Json | null
           asignado_a?: string | null
           created_at?: string | null
-          departamento?:
-            | Database["public"]["Enums"]["ticket_departamento"]
+          categoria?:
+            | Database["public"]["Enums"]["ticket_categoria"]
             | null
           descripcion?: string | null
           estado?: Database["public"]["Enums"]["ticket_estado"] | null
@@ -1036,8 +1063,8 @@ export type Database = {
           acciones_correctivas?: Json | null
           asignado_a?: string | null
           created_at?: string | null
-          departamento?:
-            | Database["public"]["Enums"]["ticket_departamento"]
+          categoria?:
+            | Database["public"]["Enums"]["ticket_categoria"]
             | null
           descripcion?: string | null
           estado?: Database["public"]["Enums"]["ticket_estado"] | null
@@ -1264,15 +1291,14 @@ export type Database = {
       propiedad_estado_entrega: "entregado" | "noEntregado"
       propiedad_estado_uso: "enUso" | "disponible"
       servicio_tipo: "CuotaRecurrente" | "ServicioAdicional" | "Ajuste" | "Otro"
-      ticket_departamento:
-        | "Consulta"
+      ticket_categoria:
         | "Administrativo"
-        | "Filtraciones"
-        | "Fugas de Agua"
-        | "Problemas Eléctricos"
-        | "Cobranza"
         | "Constructivo"
-        | "Limpieza y Mantenimiento"
+        | "Limpieza"
+        | "Cobranza"
+        | "Garantia"
+        | "Mantenimiento"
+        | "Contabilidad"
       ticket_estado: "abierto" | "en_progreso" | "resuelto" | "cerrado"
       ticket_prioridad: "baja" | "media" | "alta"
     }
@@ -1501,15 +1527,14 @@ export const Constants = {
       propiedad_estado_entrega: ["entregado", "noEntregado"],
       propiedad_estado_uso: ["enUso", "disponible"],
       servicio_tipo: ["CuotaRecurrente", "ServicioAdicional", "Ajuste", "Otro"],
-      ticket_departamento: [
-        "Consulta",
+      ticket_categoria: [
         "Administrativo",
-        "Filtraciones",
-        "Fugas de Agua",
-        "Problemas Eléctricos",
-        "Cobranza",
         "Constructivo",
-        "Limpieza y Mantenimiento",
+        "Limpieza",
+        "Cobranza",
+        "Garantia",
+        "Mantenimiento",
+        "Contabilidad",
       ],
       ticket_estado: ["abierto", "en_progreso", "resuelto", "cerrado"],
       ticket_prioridad: ["baja", "media", "alta"],

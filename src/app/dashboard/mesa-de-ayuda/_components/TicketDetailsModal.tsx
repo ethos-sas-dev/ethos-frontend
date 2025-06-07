@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/_components/ui/c
 import { CalendarDays, User, Building, AlertTriangle, Plus, MessageSquare, Upload, X, Image } from 'lucide-react';
 import { UploadButton } from "@uploadthing/react";
 import type { OurFileRouter } from "../../../api/uploadthing/core";
-import { Database } from "../../../../../ethos-types";
+import { Database } from "../../../../../supabase-ethos-types";
 
 // Definición del tipo para una Acción Correctiva
 type AccionCorrectivaItem = {
@@ -353,9 +353,9 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex items-center gap-2">
                   <Building className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm text-gray-600">Departamento:</span>
+                  <span className="text-sm text-gray-600">Categoría:</span>
                   <Badge className="font-normal border border-gray-300 text-gray-700 bg-gray-50">
-                    {capitalizeText(ticket.departamento)}
+                    {capitalizeText(ticket.categoria)}
                   </Badge>
                 </div>
                 <div className="flex items-center gap-2">

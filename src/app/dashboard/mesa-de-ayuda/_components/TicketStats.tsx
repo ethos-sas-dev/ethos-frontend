@@ -1,6 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/_components/ui/card";
-import { Badge } from "@/app/_components/ui/badge";
-import { Ticket, AlertTriangle, Clock, CheckCircle, FileText } from "lucide-react";
+import { AlertTriangle, Clock, CheckCircle, FileText, AlertCircle } from "lucide-react";
 
 interface TicketStatsProps {
   stats: {
@@ -8,12 +7,13 @@ interface TicketStatsProps {
     abierto: number;
     en_progreso: number;
     cerrado: number;
+    vencidos: number;
   };
 }
 
 export function TicketStats({ stats }: TicketStatsProps) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+    <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Total Tickets</CardTitle>
@@ -62,6 +62,19 @@ export function TicketStats({ stats }: TicketStatsProps) {
           <div className="text-2xl font-bold text-green-600">{stats.cerrado}</div>
           <p className="text-xs text-muted-foreground">
             Tickets resueltos
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Vencidos</CardTitle>
+          <AlertCircle className="h-4 w-4 text-red-500" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold text-red-600">{stats.vencidos}</div>
+          <p className="text-xs text-muted-foreground">
+            Tickets fuera de plazo
           </p>
         </CardContent>
       </Card>

@@ -1,7 +1,7 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { Database } from '../../../../../../ethos-types'; // Corregida la ruta de importación
+import { Database } from '../../../../../../supabase-ethos-types'; // Corregida la ruta de importación
 
 // Tipos para la acción correctiva
 type AccionCorrectivaInput = {
