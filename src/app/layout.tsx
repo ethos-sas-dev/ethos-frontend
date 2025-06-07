@@ -26,6 +26,9 @@ const dm_sans = DM_Sans({
 export const metadata: Metadata = {
   title: "Ethos - Sistema de Gestión",
   description: "Sistema de administración de propiedades y proyectos",
+  icons: {
+    icon: "/ethos-logo.ico",
+  },
 };
 
 export default function RootLayout({
