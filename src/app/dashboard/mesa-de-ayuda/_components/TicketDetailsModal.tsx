@@ -8,7 +8,7 @@ import { Label } from '@/app/_components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/_components/ui/select';
 import { Badge } from '@/app/_components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/_components/ui/card';
-import { CalendarDays, User, Building, AlertTriangle, Plus, MessageSquare, Upload, X, Image } from 'lucide-react';
+import { CalendarDays, User, Building, Plus, MessageSquare, Upload, X, Image, Paperclip, ExternalLink } from 'lucide-react';
 import { UploadButton } from "@uploadthing/react";
 import type { OurFileRouter } from "../../../api/uploadthing/core";
 import { Database } from "../../../../../supabase-ethos-types";
@@ -22,6 +22,11 @@ type AccionCorrectivaItem = {
 
 type Ticket = Database["public"]["Tables"]["tickets"]["Row"] & {
   acciones_correctivas: AccionCorrectivaItem[] | null; 
+  categoria_info?: {
+    id: number;
+    categoria: string;
+    dias_vencimiento: number;
+  } | null;
   cliente?: {
     id: number;
     tipo_persona: Database["public"]["Enums"]["perfil_cliente_tipo_persona"];
@@ -53,10 +58,14 @@ interface TicketDetailsModalProps {
   onClose: () => void;
   ticket: Ticket;
   onTicketUpdated: (updatedTicket: Ticket) => void;
+  getTicketProjects?: (ticket: Ticket) => any[];
 }
 
-export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }: TicketDetailsModalProps) {
-  const [selectedStatus, setSelectedStatus] = useState<Database["public"]["Enums"]["ticket_estado"] | null>(ticket.estado || null);
+export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, getTicketProjects }: TicketDetailsModalProps) {
+  // Estado local del ticket para evitar pérdida de datos durante actualizaciones
+  const [localTicket, setLocalTicket] = useState<Ticket>(ticket);
+  
+  const [selectedStatus, setSelectedStatus] = useState<Database["public"]["Enums"]["ticket_estado"] | null>(localTicket.estado || null);
   const [newActionDescription, setNewActionDescription] = useState('');
   const [showAddAction, setShowAddAction] = useState(false);
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
@@ -66,10 +75,20 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [showImageUpload, setShowImageUpload] = useState(false);
+  
+  // Estado para tracking de imágenes que fallaron al cargar
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+
+  // Actualizar ticket local cuando cambie el prop
+  useEffect(() => {
+    if (ticket && ticket.id) {
+      setLocalTicket(ticket);
+    }
+  }, [ticket]);
 
   useEffect(() => {
     if (isOpen) {
-      setSelectedStatus(ticket.estado || null);
+      setSelectedStatus(localTicket.estado || null);
       setNewActionDescription('');
       setShowAddAction(false);
       setIsSubmittingAction(false);
@@ -78,8 +97,9 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
       setUploadedImageUrl(null);
       setIsUploadingImage(false);
       setShowImageUpload(false);
+      setFailedImages(new Set());
     } 
-  }, [isOpen, ticket]);
+  }, [isOpen, localTicket]);
 
   // Función para capitalizar texto
   const capitalizeText = (text: string | null) => {
@@ -126,22 +146,22 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
   };
 
   const handleStatusUpdate = async () => {
-    if (selectedStatus === ticket.estado || !selectedStatus) return;
+    if (selectedStatus === localTicket.estado || !selectedStatus) return;
 
-    const originalStatus = ticket.estado;
-    const originalTicket = { ...ticket }; // Copia superficial para revertir
+    const originalStatus = localTicket.estado;
+    const originalTicket = { ...localTicket }; // Copia superficial para revertir
 
     // Actualización optimista local
     const optimisticTicket = {
-      ...ticket,
+      ...localTicket,
       estado: selectedStatus,
     };
+    setLocalTicket(optimisticTicket); // Actualizar estado local
     onTicketUpdated(optimisticTicket as Ticket); // Actualiza la tabla principal
-    // setSelectedStatus ya está actualizado por el Select
 
     setIsUpdatingStatus(true);
     try {
-      const response = await fetch(`/api/tickets/${ticket.id}/update-status`, {
+      const response = await fetch(`/api/tickets/${localTicket.id}/update-status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ estado: selectedStatus }),
@@ -153,16 +173,17 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
         throw new Error(updatedTicketData.error || 'Error al actualizar el estado');
       }
       
-      // La API confirmó, los datos en el modal y tabla ya deberían estar actualizados optimistamente.
-      // Opcionalmente, podrías llamar a onTicketUpdated aquí de nuevo con updatedTicketData
-      // si la API devuelve más campos actualizados de los que manejaste optimistamente.
-      // Por ahora, asumimos que el estado es el único cambio relevante.
-      console.log("Estado actualizado para ticket (confirmado por API):", ticket.id);
+      // Actualizar con los datos confirmados de la API
+      setLocalTicket(updatedTicketData);
+      onTicketUpdated(updatedTicketData as Ticket);
+      
+      console.log("Estado actualizado para ticket (confirmado por API):", localTicket.id);
 
     } catch (error: any) {
       console.error("Error updating ticket status:", error);
       // Revertir estado en caso de error
       setSelectedStatus(originalStatus); // Revertir en el modal
+      setLocalTicket(originalTicket); // Revertir estado local
       onTicketUpdated(originalTicket as Ticket); // Revertir en la tabla principal
       // Aquí podrías mostrar una notificación de error al usuario
     } finally {
@@ -176,40 +197,19 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
       return;
     }
 
-    const originalTicket = JSON.parse(JSON.stringify(ticket)); // Copia profunda para revertir
-
-    // Crear la nueva acción para la UI optimista
-    const newAction: AccionCorrectivaItem = {
-      fecha: new Date().toISOString(), // Usar fecha actual para UI
-      descripcion: newActionDescription.trim(),
-      imagen_url: uploadedImageUrl, // Incluir la imagen subida
-    };
-
-    // Actualización optimista local
-    const optimisticTicket = {
-      ...ticket,
-      acciones_correctivas: [...(ticket.acciones_correctivas || []), newAction],
-      estado: ticket.estado === 'abierto' ? 'en_progreso' : ticket.estado, // Cambiar a 'en_progreso' si estaba 'abierto'
-    } as Ticket;
-
-    onTicketUpdated(optimisticTicket);
-    setNewActionDescription('');
-    setShowAddAction(false);
-    setUploadedImageUrl(null); // Reset imagen
-    setShowImageUpload(false); // Reset UI de imagen
-    // El estado del ticket (selectedStatus) también podría necesitar ser actualizado aquí si cambia
-    if (optimisticTicket.estado !== selectedStatus) {
-      setSelectedStatus(optimisticTicket.estado);
-    }
+    // Guarda los valores actuales antes de empezar
+    const currentDescription = newActionDescription.trim();
+    const currentImageUrl = uploadedImageUrl;
 
     setIsSubmittingAction(true);
+    
     try {
-      const response = await fetch(`/api/tickets/${ticket.id}/add-corrective-action`, {
+      const response = await fetch(`/api/tickets/${localTicket.id}/add-corrective-action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          descripcion: newActionDescription.trim(), 
-          imagen_url: uploadedImageUrl // Enviar la imagen a la API
+          descripcion: currentDescription, 
+          imagen_url: currentImageUrl
         }),
       });
 
@@ -219,23 +219,29 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
         throw new Error(updatedTicketData.error || 'Error al añadir la acción correctiva');
       }
       
-      // La API confirmó. Es buena práctica reemplazar el ticket optimista con el de la API
-      // ya que puede tener datos actualizados por el backend (ej: fecha exacta de la acción o ID)
+      // Actualizar el estado local del ticket primero
+      setLocalTicket(updatedTicketData);
+      
+      // Luego notificar al componente padre
       onTicketUpdated(updatedTicketData as Ticket);
-      // Si la API actualiza el estado, asegúrate de que el selectedStatus lo refleje también.
+      
+      // Actualizar el estado del modal si cambió
       if (updatedTicketData.estado && updatedTicketData.estado !== selectedStatus) {
         setSelectedStatus(updatedTicketData.estado);
       }
-      console.log("Acción Correctiva Añadida (confirmado por API) para ticket:", ticket.id);
+      
+      // Resetear el formulario solo después del éxito
+      setNewActionDescription('');
+      setShowAddAction(false);
+      setUploadedImageUrl(null);
+      setShowImageUpload(false);
+      
+      console.log("Acción Correctiva Añadida exitosamente para ticket:", localTicket.id);
 
     } catch (error: any) {
       console.error("Error adding corrective action:", error);
-      // Revertir en caso de error
-      onTicketUpdated(originalTicket as Ticket);
-      if (originalTicket.estado !== selectedStatus) {
-        setSelectedStatus(originalTicket.estado || null);
-      }
-      // Aquí podrías mostrar una notificación de error al usuario
+      // Mostrar error al usuario - podrías implementar un toast o alert aquí
+      alert(`Error al añadir la acción correctiva: ${error.message}`);
     } finally {
       setIsSubmittingAction(false);
     }
@@ -247,7 +253,7 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <MessageSquare className="h-5 w-5" />
-            Ticket #{ticket.id} - {ticket.titulo || "Sin título"}
+            Ticket #{localTicket.id} - {localTicket.titulo || "Sin título"}
           </DialogTitle>
         </DialogHeader>
 
@@ -261,14 +267,14 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {(ticket as any).cliente ? (
+              {(localTicket as any).cliente ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-sm font-medium">Nombre/Razón Social:</Label>
                     <p className="text-sm text-gray-700 mt-1">
-                      {(ticket as any).cliente?.tipo_persona === 'Natural' 
-                        ? (ticket as any).cliente?.persona_natural?.razon_social || 'Sin nombre'
-                        : (ticket as any).cliente?.persona_juridica?.razon_social || (ticket as any).cliente?.persona_juridica?.nombre_comercial || 'Sin razón social'
+                      {(localTicket as any).cliente?.tipo_persona === 'Natural' 
+                        ? (localTicket as any).cliente?.persona_natural?.razon_social || 'Sin nombre'
+                        : (localTicket as any).cliente?.persona_juridica?.razon_social || (localTicket as any).cliente?.persona_juridica?.nombre_comercial || 'Sin razón social'
                       }
                     </p>
                   </div>
@@ -276,11 +282,11 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
                   <div>
                     <Label className="text-sm font-medium">Identificación:</Label>
                     <p className="text-sm text-gray-700 mt-1">
-                      {(ticket as any).cliente?.tipo_persona === 'Natural' 
-                        ? `${(ticket as any).cliente?.persona_natural?.cedula ? 'C.I: ' + (ticket as any).cliente.persona_natural.cedula : ''}${
-                            (ticket as any).cliente?.persona_natural?.ruc ? ' | RUC: ' + (ticket as any).cliente.persona_natural.ruc : ''
+                      {(localTicket as any).cliente?.tipo_persona === 'Natural' 
+                        ? `${(localTicket as any).cliente?.persona_natural?.cedula ? 'C.I: ' + (localTicket as any).cliente.persona_natural.cedula : ''}${
+                            (localTicket as any).cliente?.persona_natural?.ruc ? ' | RUC: ' + (localTicket as any).cliente.persona_natural.ruc : ''
                           }`.trim() || 'Sin identificación'
-                        : (ticket as any).cliente?.persona_juridica?.ruc ? 'RUC: ' + (ticket as any).cliente.persona_juridica.ruc : 'Sin RUC'
+                        : (localTicket as any).cliente?.persona_juridica?.ruc ? 'RUC: ' + (localTicket as any).cliente.persona_juridica.ruc : 'Sin RUC'
                       }
                     </p>
                   </div>
@@ -288,16 +294,16 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
                   <div>
                     <Label className="text-sm font-medium">Tipo: </Label>
                     <Badge className="mt-1 font-normal border border-blue-300 text-blue-700 bg-blue-50">
-                      Persona {capitalizeText((ticket as any).cliente?.tipo_persona)}
+                      Persona {capitalizeText((localTicket as any).cliente?.tipo_persona)}
                     </Badge>
                   </div>
 
                   <div>
                     <Label className="text-sm font-medium">Teléfono de contacto:</Label>
                     <p className="text-sm text-gray-700 mt-1">
-                      {ticket.numero_contacto_ticket || 
-                       (ticket as any).cliente?.contacto_administrativo?.telefono || 
-                       (ticket as any).cliente?.contacto_gerente?.telefono || 
+                      {localTicket.numero_contacto_ticket || 
+                       (localTicket as any).cliente?.contacto_administrativo?.telefono || 
+                       (localTicket as any).cliente?.contacto_gerente?.telefono || 
                        'Sin teléfono registrado'}
                     </p>
                   </div>
@@ -307,21 +313,44 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
               )}
 
               {/* Información de la Propiedad */}
-              {(ticket as any).propiedad && (
-                <div className="border-t pt-4 mt-4">
-                  <Label className="text-sm font-medium mb-3 block">Propiedad Vinculada:</Label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label className="text-xs text-gray-500">Proyecto:</Label>
-                      <p className="text-sm text-gray-700">
-                        {(ticket as any).propiedad?.proyecto?.nombre || 'Sin proyecto'}
-                      </p>
-                    </div>
+              {/* Información de Proyecto(s) - Siempre mostrar */}
+              <div className="border-t pt-4 mt-4">
+                <Label className="text-sm font-medium mb-3 block">
+                  {(localTicket as any).propiedad ? 'Propiedad Vinculada' : 'Proyecto(s) Relacionados'}:
+                </Label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-xs text-gray-500">Proyecto(s):</Label>
+                    {(() => {
+                      const proyectos = getTicketProjects ? getTicketProjects(localTicket) : 
+                        ((localTicket as any).propiedad?.proyecto ? [(localTicket as any).propiedad.proyecto] : []);
+                      
+                      if (proyectos.length === 0) {
+                        return <p className="text-sm text-gray-500">Sin proyecto asignado</p>;
+                      } else if (proyectos.length === 1) {
+                        return <p className="text-sm text-gray-700">{proyectos[0].nombre}</p>;
+                      } else {
+                        return (
+                          <div className="space-y-1">
+                            <p className="text-sm text-gray-700">{proyectos.length} proyectos (ticket general):</p>
+                            <div className="flex flex-wrap gap-1">
+                              {proyectos.map((proyecto, idx) => (
+                                <Badge key={idx} className="text-xs bg-gray-100 text-gray-700">
+                                  {proyecto.nombre}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      }
+                    })()}
+                  </div>
+                  {(localTicket as any).propiedad && (
                     <div>
                       <Label className="text-xs text-gray-500">Propiedad:</Label>
                       <p className="text-sm text-gray-700">
                         {(() => {
-                          const identificadores = (ticket as any).propiedad?.identificadores as Record<string, any> | undefined;
+                          const identificadores = (localTicket as any).propiedad?.identificadores as Record<string, any> | undefined;
                           if (identificadores && 
                               typeof identificadores.inferior === 'string' && 
                               typeof identificadores.superior === 'string' && 
@@ -332,15 +361,15 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
                             // Fallback para otros formatos de identificadores, si los hubiera
                             return Object.entries(identificadores)
                               .map(([key, value]) => `${key}: ${value}`)
-                              .join(', ') || `Prop. #${(ticket as any).propiedad?.id}`;
+                              .join(', ') || `Prop. #${(localTicket as any).propiedad?.id}`;
                           }
-                          return `Propiedad #${(ticket as any).propiedad?.id}`;
+                          return `Propiedad #${(localTicket as any).propiedad?.id}`;
                         })()}
                       </p>
                     </div>
-                  </div>
+                  )}
                 </div>
-              )}
+              </div>
             </CardContent>
           </Card>
 
@@ -350,37 +379,111 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
               <CardTitle className="text-lg">Información General</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <div className="flex items-center gap-2">
                   <Building className="h-4 w-4 text-gray-500" />
                   <span className="text-sm text-gray-600">Categoría:</span>
-                  <Badge className="font-normal border border-gray-300 text-gray-700 bg-gray-50">
-                    {capitalizeText(ticket.categoria)}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm text-gray-600">Prioridad:</span>
-                  <Badge className={getPriorityBadgeVariant(ticket.prioridad)}>
-                    {capitalizeText(ticket.prioridad)}
-                  </Badge>
+                                      <Badge className="font-normal border border-gray-300 text-gray-700 bg-gray-50">
+                      {capitalizeText(localTicket.categoria_info?.categoria || null)}
+                    </Badge>
                 </div>
               </div>
               
               <div className="flex items-center gap-2">
                 <CalendarDays className="h-4 w-4 text-gray-500" />
                 <span className="text-sm text-gray-600">Creado:</span>
-                <span className="text-sm">{ticket.created_at ? formatDate(ticket.created_at) : "Sin fecha"}</span>
+                <span className="text-sm">{localTicket.created_at ? formatDate(localTicket.created_at) : "Sin fecha"}</span>
               </div>
 
-              {ticket.descripcion && (
+              {localTicket.descripcion && (
                 <div>
                   <Label className="text-sm font-medium">Descripción:</Label>
-                  <p className="mt-1 text-sm text-gray-700 bg-gray-50 p-3 rounded-md">{ticket.descripcion}</p>
+                  <p className="mt-1 text-sm text-gray-700 bg-gray-50 p-3 rounded-md">{localTicket.descripcion}</p>
                 </div>
               )}
             </CardContent>
           </Card>
+
+          {/* Archivos Adjuntos - Solo mostrar si hay archivos */}
+          {localTicket.media_links && Array.isArray(localTicket.media_links) && localTicket.media_links.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Paperclip className="h-5 w-5" />
+                  Archivos Adjuntos ({localTicket.media_links.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {localTicket.media_links.map((mediaUrl, index: number) => {
+                    // Verificar que es un string válido
+                    if (typeof mediaUrl !== 'string') return null;
+                    // Extraer nombre del archivo de la URL
+                    const fileName = mediaUrl.split('/').pop()?.split('?')[0] || `Archivo ${index + 1}`;
+                    // Determinar si la imagen falló al cargar
+                    const isFailedImage = failedImages.has(mediaUrl);
+                    
+                    const handleImageError = () => {
+                      setFailedImages(prev => new Set([...prev, mediaUrl]));
+                    };
+                    
+                    return (
+                      <div key={index} className="border rounded-lg bg-gray-50 overflow-hidden">
+                        {/* Header con info del archivo */}
+                        <div className="flex items-center justify-between p-3">
+                          <div className="flex items-center gap-3">
+                            <Paperclip className="h-4 w-4 text-gray-500" />
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">
+                                {fileName}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {isFailedImage ? 'Archivo adjunto' : 'Imagen adjunta'}
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => window.open(mediaUrl, '_blank')}
+                            className="flex items-center gap-2 text-blue-600 hover:text-blue-800"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                            Abrir
+                          </Button>
+                        </div>
+                        
+                        {/* Preview del archivo */}
+                        {!isFailedImage ? (
+                          <div className="px-3 pb-3">
+                            <img 
+                              src={mediaUrl} 
+                              alt={fileName}
+                              className="w-full max-h-48 object-contain rounded border cursor-pointer hover:opacity-90 transition-opacity"
+                              onClick={() => window.open(mediaUrl, '_blank')}
+                              onError={handleImageError}
+                            />
+                          </div>
+                        ) : (
+                          <div className="px-3 pb-3">
+                            <div 
+                              className="w-full h-20 bg-gray-100 rounded border border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:bg-gray-200 transition-colors"
+                              onClick={() => window.open(mediaUrl, '_blank')}
+                            >
+                              <div className="text-center">
+                                <Paperclip className="h-6 w-6 mx-auto text-gray-400 mb-1" />
+                                <p className="text-xs text-gray-500">Clic para abrir</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Estado del Ticket */}
           <Card>
@@ -390,8 +493,8 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
             <CardContent className="space-y-4">
               <div className="flex items-center gap-4">
                 <Label htmlFor="status">Estado actual:</Label>
-                <Badge className={getBadgeVariant(ticket.estado)}>
-                  {capitalizeText(ticket.estado)}
+                <Badge className={getBadgeVariant(localTicket.estado)}>
+                  {capitalizeText(localTicket.estado)}
                 </Badge>
               </div>
               
@@ -411,7 +514,7 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
                   </SelectContent>
                 </Select>
                 
-                {selectedStatus !== ticket.estado && (
+                {selectedStatus !== localTicket.estado && (
                   <Button 
                     onClick={handleStatusUpdate} 
                     disabled={isUpdatingStatus}
@@ -427,7 +530,7 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
           {/* Acciones Correctivas */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg">Acciones Correctivas ({Array.isArray(ticket.acciones_correctivas) ? ticket.acciones_correctivas.length : 0})</CardTitle>
+              <CardTitle className="text-lg">Acciones Correctivas ({Array.isArray(localTicket.acciones_correctivas) ? localTicket.acciones_correctivas.length : 0})</CardTitle>
               <Button 
                 variant="outline" 
                 size="sm" 
@@ -575,9 +678,9 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated }:
               )}
 
               {/* Lista de acciones existentes */}
-              {Array.isArray(ticket.acciones_correctivas) && ticket.acciones_correctivas.length > 0 ? (
+              {Array.isArray(localTicket.acciones_correctivas) && localTicket.acciones_correctivas.length > 0 ? (
                 <div className="space-y-3">
-                  {[...ticket.acciones_correctivas].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()).map((accion, idx) => (
+                  {[...localTicket.acciones_correctivas].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()).map((accion, idx) => (
                     <div key={idx} className="border rounded-lg p-3 bg-gray-50">
                       <div className="flex justify-between items-start mb-2">
                         <span className="text-xs text-gray-500">

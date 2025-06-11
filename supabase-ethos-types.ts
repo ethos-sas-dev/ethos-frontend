@@ -91,6 +91,36 @@ export type Database = {
         }
         Relationships: []
       }
+      categoria_tickets: {
+        Row: {
+          activo: boolean | null
+          categoria: string
+          created_at: string | null
+          descripcion: string | null
+          dias_vencimiento: number
+          id: number
+          updated_at: string | null
+        }
+        Insert: {
+          activo?: boolean | null
+          categoria: string
+          created_at?: string | null
+          descripcion?: string | null
+          dias_vencimiento: number
+          id?: number
+          updated_at?: string | null
+        }
+        Update: {
+          activo?: boolean | null
+          categoria?: string
+          created_at?: string | null
+          descripcion?: string | null
+          dias_vencimiento?: number
+          id?: number
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       configuraciones_facturacion: {
         Row: {
           activo: boolean | null
@@ -244,6 +274,7 @@ export type Database = {
           comprobante_pago_id: number | null
           contifico_id: string | null
           created_at: string | null
+          desde_el_sistema: boolean | null
           estado: Database["public"]["Enums"]["factura_estado"] | null
           fecha_aprobacion: string | null
           fecha_comprobante: string | null
@@ -256,6 +287,7 @@ export type Database = {
           observaciones: string | null
           periodo: string | null
           propiedad_id: number | null
+          retencion: number | null
           subtotal: number | null
           total: number | null
           updated_at: string | null
@@ -266,6 +298,7 @@ export type Database = {
           comprobante_pago_id?: number | null
           contifico_id?: string | null
           created_at?: string | null
+          desde_el_sistema?: boolean | null
           estado?: Database["public"]["Enums"]["factura_estado"] | null
           fecha_aprobacion?: string | null
           fecha_comprobante?: string | null
@@ -278,6 +311,7 @@ export type Database = {
           observaciones?: string | null
           periodo?: string | null
           propiedad_id?: number | null
+          retencion?: number | null
           subtotal?: number | null
           total?: number | null
           updated_at?: string | null
@@ -288,6 +322,7 @@ export type Database = {
           comprobante_pago_id?: number | null
           contifico_id?: string | null
           created_at?: string | null
+          desde_el_sistema?: boolean | null
           estado?: Database["public"]["Enums"]["factura_estado"] | null
           fecha_aprobacion?: string | null
           fecha_comprobante?: string | null
@@ -300,6 +335,7 @@ export type Database = {
           observaciones?: string | null
           periodo?: string | null
           propiedad_id?: number | null
+          retencion?: number | null
           subtotal?: number | null
           total?: number | null
           updated_at?: string | null
@@ -959,36 +995,6 @@ export type Database = {
         }
         Relationships: []
       }
-      categoria_vencimientos: {
-        Row: {
-          id: number
-          categoria: Database["public"]["Enums"]["ticket_categoria"]
-          dias_vencimiento: number
-          descripcion: string | null
-          activo: boolean | null
-          created_at: string | null
-          updated_at: string | null
-        }
-        Insert: {
-          id?: number
-          categoria: Database["public"]["Enums"]["ticket_categoria"]
-          dias_vencimiento: number
-          descripcion?: string | null
-          activo?: boolean | null
-          created_at?: string | null
-          updated_at?: string | null
-        }
-        Update: {
-          id?: number
-          categoria?: Database["public"]["Enums"]["ticket_categoria"]
-          dias_vencimiento?: number
-          descripcion?: string | null
-          activo?: boolean | null
-          created_at?: string | null
-          updated_at?: string | null
-        }
-        Relationships: []
-      }
       ticket_archivo_links: {
         Row: {
           archivo_id: number
@@ -1025,59 +1031,54 @@ export type Database = {
       tickets: {
         Row: {
           acciones_correctivas: Json | null
-          asignado_a: string | null
+          categoria: number | null
           created_at: string | null
-          categoria:
-            | Database["public"]["Enums"]["ticket_categoria"]
-            | null
           descripcion: string | null
           estado: Database["public"]["Enums"]["ticket_estado"] | null
           id: number
           media_links: Json | null
           numero_contacto_ticket: string | null
           perfil_cliente_id: number | null
-          prioridad: Database["public"]["Enums"]["ticket_prioridad"] | null
           propiedad_id: number | null
           titulo: string | null
           updated_at: string | null
         }
         Insert: {
           acciones_correctivas?: Json | null
-          asignado_a?: string | null
+          categoria?: number | null
           created_at?: string | null
-          categoria?:
-            | Database["public"]["Enums"]["ticket_categoria"]
-            | null
           descripcion?: string | null
           estado?: Database["public"]["Enums"]["ticket_estado"] | null
           id?: number
           media_links?: Json | null
           numero_contacto_ticket?: string | null
           perfil_cliente_id?: number | null
-          prioridad?: Database["public"]["Enums"]["ticket_prioridad"] | null
           propiedad_id?: number | null
           titulo?: string | null
           updated_at?: string | null
         }
         Update: {
           acciones_correctivas?: Json | null
-          asignado_a?: string | null
+          categoria?: number | null
           created_at?: string | null
-          categoria?:
-            | Database["public"]["Enums"]["ticket_categoria"]
-            | null
           descripcion?: string | null
           estado?: Database["public"]["Enums"]["ticket_estado"] | null
           id?: number
           media_links?: Json | null
           numero_contacto_ticket?: string | null
           perfil_cliente_id?: number | null
-          prioridad?: Database["public"]["Enums"]["ticket_prioridad"] | null
           propiedad_id?: number | null
           titulo?: string | null
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "fk_tickets_categoria"
+            columns: ["categoria"]
+            isOneToOne: false
+            referencedRelation: "categoria_tickets"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "tickets_perfil_cliente_id_fkey"
             columns: ["perfil_cliente_id"]
@@ -1291,14 +1292,6 @@ export type Database = {
       propiedad_estado_entrega: "entregado" | "noEntregado"
       propiedad_estado_uso: "enUso" | "disponible"
       servicio_tipo: "CuotaRecurrente" | "ServicioAdicional" | "Ajuste" | "Otro"
-      ticket_categoria:
-        | "Administrativo"
-        | "Constructivo"
-        | "Limpieza"
-        | "Cobranza"
-        | "Garantia"
-        | "Mantenimiento"
-        | "Contabilidad"
       ticket_estado: "abierto" | "en_progreso" | "resuelto" | "cerrado"
       ticket_prioridad: "baja" | "media" | "alta"
     }
@@ -1527,15 +1520,6 @@ export const Constants = {
       propiedad_estado_entrega: ["entregado", "noEntregado"],
       propiedad_estado_uso: ["enUso", "disponible"],
       servicio_tipo: ["CuotaRecurrente", "ServicioAdicional", "Ajuste", "Otro"],
-      ticket_categoria: [
-        "Administrativo",
-        "Constructivo",
-        "Limpieza",
-        "Cobranza",
-        "Garantia",
-        "Mantenimiento",
-        "Contabilidad",
-      ],
       ticket_estado: ["abierto", "en_progreso", "resuelto", "cerrado"],
       ticket_prioridad: ["baja", "media", "alta"],
     },

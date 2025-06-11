@@ -14,12 +14,11 @@ import {
   TableRow,
 } from "@/app/_components/ui/table";
 import { Skeleton } from "@/app/_components/ui/skeleton";
-import { AlertCircle, Eye, Search, ArrowUp, ArrowDown } from "lucide-react";
+import { AlertCircle, Eye, Search, ArrowUp, ArrowDown, X } from "lucide-react";
 import { Alert, AlertDescription } from "@/app/_components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/app/_components/ui/tabs";
 import { Input } from "@/app/_components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/_components/ui/select";
-import { Checkbox } from "@/app/_components/ui/checkbox";
 import { useDebounce } from '@uidotdev/usehooks';
 import { Database } from "../../../../supabase-ethos-types";
 import { TicketDetailsModal } from "./_components/TicketDetailsModal";
@@ -35,6 +34,11 @@ export type AccionCorrectivaItem = {
 // Actualización del tipo Ticket
 export type Ticket = Database["public"]["Tables"]["tickets"]["Row"] & {
   acciones_correctivas: AccionCorrectivaItem[] | null;
+  categoria_info?: {
+    id: number;
+    categoria: string;
+    dias_vencimiento: number;
+  } | null;
   cliente?: {
     id: number;
     tipo_persona: Database["public"]["Enums"]["perfil_cliente_tipo_persona"];
@@ -69,7 +73,7 @@ export default function MesaDeAyudaPage() {
 
   // Estados para el modal
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
 
   // Estados para filtros
   const [filtroCategoria, setFiltroCategoria] = useState<string>('todos');
@@ -77,41 +81,51 @@ export default function MesaDeAyudaPage() {
   const [filtroProyecto, setFiltroProyecto] = useState<string>('todos');
   const [ordenFecha, setOrdenFecha] = useState<'asc' | 'desc'>('desc');
   const [ordenVencimiento, setOrdenVencimiento] = useState<'asc' | 'desc' | null>(null);
-  const [mostrarSoloVencidos, setMostrarSoloVencidos] = useState(false);
-  const [mostrarPorVencer24h, setMostrarPorVencer24h] = useState(false);
+  const [filtroVencimiento, setFiltroVencimiento] = useState<'todos' | 'vencidos' | 'por_vencer_24h'>('todos');
   
   // Estados para search y tabs
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("activos");
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
-  // Estados para configuraciones de vencimiento
+  // Función para verificar si hay filtros aplicados
+  const hasActiveFilters = () => {
+    return filtroCategoria !== 'todos' || 
+           filtroEstado !== 'todos' || 
+           filtroProyecto !== 'todos' || 
+           filtroVencimiento !== 'todos';
+  };
+
+  // Función para limpiar todos los filtros
+  const clearAllFilters = () => {
+    setFiltroCategoria('todos');
+    setFiltroEstado('todos');
+    setFiltroProyecto('todos');
+    setFiltroVencimiento('todos');
+  };
+
+  // Estados para configuraciones de vencimiento (ahora categorias con dias_vencimiento)
   const [configuracionesVencimiento, setConfiguracionesVencimiento] = useState<any[]>([]);
+  
+  // Estado para mapeo de clientes a sus proyectos (fallback)
+  const [clienteProyectos, setClienteProyectos] = useState<Map<number, any[]>>(new Map());
 
   // Función para obtener vencimiento por defecto según categoría
-  const getDefaultVencimiento = (categoria: Database["public"]["Enums"]["ticket_categoria"] | null): number => {
-    switch (categoria) {
-      case "Administrativo": return 5;
-      case "Constructivo": return 10;
-      case "Limpieza": return 3;
-      case "Cobranza": return 7;
-      case "Garantia": return 2; // Prioritario
-      case "Mantenimiento": return 5;
-      case "Contabilidad": return 7;
-      default: return 5; // Fallback
-    }
+  const getDefaultVencimiento = (categoriaId: number | null): number => {
+    if (!categoriaId) return 5; // Fallback si no hay categoría
+    
+    const configuracion = configuracionesVencimiento.find(
+      config => config.id === categoriaId
+    );
+    
+    return configuracion ? configuracion.dias_vencimiento : 5; // Fallback
   };
 
   // Función para verificar si un ticket está vencido
   const isTicketVencido = (ticket: Ticket): boolean => {
     if (!ticket.categoria || !ticket.created_at) return false;
     
-    const configuracion = configuracionesVencimiento.find(
-      config => config.categoria === ticket.categoria
-    );
-    
-    // Usar configuración de BD o valores por defecto
-    const diasVencimiento = configuracion ? configuracion.dias_vencimiento : getDefaultVencimiento(ticket.categoria);
+    const diasVencimiento = getDefaultVencimiento(ticket.categoria);
     
     const fechaCreacion = new Date(ticket.created_at);
     const fechaVencimiento = new Date(fechaCreacion);
@@ -133,10 +147,7 @@ export default function MesaDeAyudaPage() {
   const isTicketPorVencer24h = (ticket: Ticket): boolean => {
     if (ticket.estado === 'cerrado') return false;
     
-    const configuracion = configuracionesVencimiento.find(
-      config => config.categoria === ticket.categoria
-    );
-    const diasVencimiento = configuracion ? configuracion.dias_vencimiento : getDefaultVencimiento(ticket.categoria);
+    const diasVencimiento = getDefaultVencimiento(ticket.categoria);
     const diasTranscurridos = getDiasTranscurridos(ticket);
     const diasRestantes = diasVencimiento - diasTranscurridos;
     
@@ -148,10 +159,7 @@ export default function MesaDeAyudaPage() {
   const getVencimientoPriority = (ticket: Ticket): number => {
     if (ticket.estado === 'cerrado') return 1000; // Los cerrados van al final
     
-    const configuracion = configuracionesVencimiento.find(
-      config => config.categoria === ticket.categoria
-    );
-    const diasVencimiento = configuracion ? configuracion.dias_vencimiento : getDefaultVencimiento(ticket.categoria);
+    const diasVencimiento = getDefaultVencimiento(ticket.categoria);
     const diasTranscurridos = getDiasTranscurridos(ticket);
     
     if (diasTranscurridos > diasVencimiento) {
@@ -181,6 +189,21 @@ export default function MesaDeAyudaPage() {
       return `${name.substring(0, maxLength)}...`;
     }
     return name;
+  };
+
+  // Función para obtener proyectos de un ticket (directo o fallback)
+  const getTicketProjects = (ticket: Ticket): any[] => {
+    // Si tiene propiedad específica, usar ese proyecto
+    if (ticket.propiedad?.proyecto) {
+      return [ticket.propiedad.proyecto];
+    }
+    
+    // Si no tiene propiedad, usar los proyectos del cliente como fallback
+    if (ticket.cliente?.id) {
+      return clienteProyectos.get(ticket.cliente.id) || [];
+    }
+    
+    return [];
   };
 
   // Filtrar tickets según los filtros aplicados
@@ -215,7 +238,7 @@ export default function MesaDeAyudaPage() {
 
     // Filtro por categoría
     if (filtroCategoria !== 'todos') {
-      filtrados = filtrados.filter(ticket => ticket.categoria === filtroCategoria);
+      filtrados = filtrados.filter(ticket => ticket.categoria_info?.categoria === filtroCategoria);
     }
 
     // Filtro por estado (solo aplicar si estamos en tab activos)
@@ -223,21 +246,21 @@ export default function MesaDeAyudaPage() {
       filtrados = filtrados.filter(ticket => ticket.estado === filtroEstado);
     }
 
-    // Filtro por proyecto
+    // Filtro por proyecto (incluye fallback para tickets sin propiedad)
     if (filtroProyecto !== 'todos') {
-      filtrados = filtrados.filter(ticket => 
-        ticket.propiedad?.proyecto?.id?.toString() === filtroProyecto
-      );
+      filtrados = filtrados.filter(ticket => {
+        const proyectos = getTicketProjects(ticket);
+        return proyectos.some(proyecto => proyecto.id?.toString() === filtroProyecto);
+      });
     }
 
-    // Filtro por vencidos (solo en tab activos)
-    if (mostrarSoloVencidos && activeTab === 'activos') {
-      filtrados = filtrados.filter(ticket => isTicketVencido(ticket));
-    }
-
-    // Filtro por vencer en 24h (solo en tab activos)
-    if (mostrarPorVencer24h && activeTab === 'activos') {
-      filtrados = filtrados.filter(ticket => isTicketPorVencer24h(ticket));
+    // Filtro por vencimiento (solo en tab activos)
+    if (activeTab === 'activos') {
+      if (filtroVencimiento === 'vencidos') {
+        filtrados = filtrados.filter(ticket => isTicketVencido(ticket));
+      } else if (filtroVencimiento === 'por_vencer_24h') {
+        filtrados = filtrados.filter(ticket => isTicketPorVencer24h(ticket));
+      }
     }
 
     // Ordenar
@@ -257,19 +280,19 @@ export default function MesaDeAyudaPage() {
     });
 
     return filtrados;
-  }, [tickets, activeTab, debouncedSearchTerm, filtroCategoria, filtroEstado, filtroProyecto, mostrarSoloVencidos, mostrarPorVencer24h, ordenFecha, ordenVencimiento, configuracionesVencimiento]);
+  }, [tickets, activeTab, debouncedSearchTerm, filtroCategoria, filtroEstado, filtroProyecto, filtroVencimiento, ordenFecha, ordenVencimiento, configuracionesVencimiento, clienteProyectos]);
 
-  // Calcular estadísticas de tickets (basado en TODOS los tickets, no filtrados)
+  // Calcular estadísticas de tickets (basado en tickets filtrados)
   const ticketStats = useMemo(() => {
     const stats = {
-      total: tickets.length,
+      total: ticketsFiltrados.length,
       abierto: 0,
       en_progreso: 0,
       cerrado: 0,
       vencidos: 0,
     };
 
-    tickets.forEach((ticket) => {
+    ticketsFiltrados.forEach((ticket) => {
       switch (ticket.estado) {
         case 'abierto':
           stats.abierto++;
@@ -290,15 +313,15 @@ export default function MesaDeAyudaPage() {
     });
 
     return stats;
-  }, [tickets, configuracionesVencimiento]);
+  }, [ticketsFiltrados, configuracionesVencimiento]);
 
   useEffect(() => {
     async function fetchData() {
       setIsLoading(true);
       setError(null);
       try {
-        // Cargar tickets y configuraciones de vencimiento en paralelo
-        const [ticketsResponse, vencimientosResponse] = await Promise.all([
+        // Cargar tickets, configuraciones de vencimiento y propiedades de clientes en paralelo
+        const [ticketsResponse, categoriasResponse, propiedadesResponse] = await Promise.all([
           supabase
             .from("tickets") 
             .select(`
@@ -306,11 +329,16 @@ export default function MesaDeAyudaPage() {
               titulo,
               descripcion,
               estado,
-              prioridad,
               categoria,
               created_at,
               acciones_correctivas,
               numero_contacto_ticket,
+              media_links,
+              categoria_info:categoria (
+                id,
+                categoria,
+                dias_vencimiento
+              ),
               cliente:perfil_cliente_id (
                 id,
                 tipo_persona,
@@ -338,17 +366,47 @@ export default function MesaDeAyudaPage() {
             `)
             .order("created_at", { ascending: false }),
           supabase
-            .from("categoria_vencimientos")
+            .from("categoria_tickets")
             .select("*")
-            .eq("activo", true)
+            .eq("activo", true),
+          supabase
+            .from("propiedades")
+            .select(`
+              propietario_id,
+              ocupante_id,
+              proyecto:proyecto_id (
+                id,
+                nombre
+              )
+            `)
         ]);
 
         if (ticketsResponse.error) {
           throw ticketsResponse.error;
         }
 
-        if (vencimientosResponse.error) {
-          console.warn("Error cargando configuraciones de vencimiento:", vencimientosResponse.error);
+        if (categoriasResponse.error) {
+          console.warn("Error cargando categorías de tickets:", categoriasResponse.error);
+        }
+
+        if (propiedadesResponse.error) {
+          console.warn("Error cargando propiedades de clientes:", propiedadesResponse.error);
+        }
+
+        // Crear mapeo de clientes a proyectos
+        const clienteProyectosMap = new Map<number, any[]>();
+        if (propiedadesResponse.data) {
+          propiedadesResponse.data.forEach((propiedad: any) => {
+            const clienteIds = [propiedad.propietario_id, propiedad.ocupante_id].filter(Boolean);
+            clienteIds.forEach((clienteId: number) => {
+              if (!clienteProyectosMap.has(clienteId)) {
+                clienteProyectosMap.set(clienteId, []);
+              }
+              if (propiedad.proyecto && !clienteProyectosMap.get(clienteId)!.some((p: any) => p.id === propiedad.proyecto.id)) {
+                clienteProyectosMap.get(clienteId)!.push(propiedad.proyecto);
+              }
+            });
+          });
         }
 
         console.log("Datos de tickets recibidos (con joins):", ticketsResponse.data);
@@ -359,7 +417,8 @@ export default function MesaDeAyudaPage() {
         }
 
         setTickets(ticketsResponse.data as any[] || []);
-        setConfiguracionesVencimiento(vencimientosResponse.data || []);
+        setConfiguracionesVencimiento(categoriasResponse.data || []);
+        setClienteProyectos(clienteProyectosMap);
       } catch (err: any) {
         console.error("Error fetching data:", err);
         setError("No se pudieron cargar los datos. Inténtalo de nuevo más tarde.");
@@ -439,12 +498,7 @@ export default function MesaDeAyudaPage() {
     }
 
     const diasTranscurridos = getDiasTranscurridos(ticket);
-    const configuracion = configuracionesVencimiento.find(
-      config => config.categoria === ticket.categoria
-    );
-    
-    // Usar configuración de BD o valores por defecto
-    const diasVencimiento = configuracion ? configuracion.dias_vencimiento : getDefaultVencimiento(ticket.categoria);
+    const diasVencimiento = ticket.categoria_info?.dias_vencimiento || getDefaultVencimiento(ticket.categoria);
     const diasRestantes = diasVencimiento - diasTranscurridos;
     
     // Si está vencido (días transcurridos > días permitidos)
@@ -483,35 +537,44 @@ export default function MesaDeAyudaPage() {
 
   // Obtener listas únicas para filtros
   const categoriasUnicas = useMemo(() => {
-    const categorias = tickets.map(ticket => ticket.categoria).filter(Boolean);
+    const categorias = tickets
+      .map(ticket => ticket.categoria_info?.categoria)
+      .filter((categoria): categoria is string => Boolean(categoria));
     return [...new Set(categorias)];
   }, [tickets]);
 
   const proyectosUnicos = useMemo(() => {
-    const proyectos = tickets
-      .map(ticket => ticket.propiedad?.proyecto)
-      .filter(Boolean)
-      .filter((proyecto, index, self) => 
-        index === self.findIndex(p => p?.id === proyecto?.id)
-      );
-    return proyectos;
-  }, [tickets]);
+    const proyectosSet = new Map<number, any>();
+    
+    tickets.forEach(ticket => {
+      const proyectos = getTicketProjects(ticket);
+      proyectos.forEach(proyecto => {
+        if (proyecto?.id && !proyectosSet.has(proyecto.id)) {
+          proyectosSet.set(proyecto.id, proyecto);
+        }
+      });
+    });
+    
+    return Array.from(proyectosSet.values());
+  }, [tickets, clienteProyectos]);
 
   // Manejador para abrir el modal con el ticket seleccionado
   const handleOpenModal = (ticket: Ticket) => {
-    setSelectedTicket(ticket);
+    setSelectedTicketId(ticket.id);
     setIsModalOpen(true);
   };
 
   // Manejador para cuando se actualiza un ticket
   const handleTicketUpdated = (updatedTicket: Ticket) => {
     setTickets(prevTickets => 
-      prevTickets.map(t => t.id === updatedTicket.id ? updatedTicket : t)
+      prevTickets.map(t => {
+        if (t.id === updatedTicket.id) {
+          // Merge the updated fields into the existing rich object
+          return { ...t, ...updatedTicket }; 
+        }
+        return t;
+      })
     );
-    // Asegurarse de que el estado selectedTicket también se actualiza si es el ticket abierto en el modal
-    if (selectedTicket && selectedTicket.id === updatedTicket.id) {
-      setSelectedTicket(updatedTicket);
-    }
   };
 
   // Manejador para ordenar por fecha
@@ -591,9 +654,22 @@ export default function MesaDeAyudaPage() {
           {/* Barra de búsqueda y filtros */}
           <Card>
             <CardHeader>
-              <CardTitle>
-                {activeTab === 'activos' ? 'Tickets Activos' : 'Tickets Completados'}
-              </CardTitle>
+              <div className="flex justify-between items-center">
+                <CardTitle>
+                  {activeTab === 'activos' ? 'Tickets Activos' : 'Tickets Completados'}
+                </CardTitle>
+                {hasActiveFilters() && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={clearAllFilters}
+                    className="flex items-center gap-2 text-gray-600 hover:text-gray-800"
+                  >
+                    <X className="h-4 w-4" />
+                    Limpiar filtros
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -607,7 +683,7 @@ export default function MesaDeAyudaPage() {
                     <SelectContent>
                       <SelectItem value="todos">Todas</SelectItem>
                       {categoriasUnicas.map(categoria => (
-                        <SelectItem key={categoria} value={categoria || ''}>{categoria || 'Sin categoría'}</SelectItem>
+                        <SelectItem key={categoria} value={categoria}>{categoria}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -625,7 +701,6 @@ export default function MesaDeAyudaPage() {
                         <SelectItem value="todos">Todos</SelectItem>
                         <SelectItem value="abierto">Abierto</SelectItem>
                         <SelectItem value="en_progreso">En Progreso</SelectItem>
-                        <SelectItem value="resuelto">Resuelto</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -652,25 +727,17 @@ export default function MesaDeAyudaPage() {
                 {/* Filtros Adicionales - Solo en activos */}
                 {activeTab === 'activos' && (
                   <div>
-                    <label className="block text-sm font-medium mb-2">Filtros adicionales</label>
-                    <div className="space-y-2">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="mostrar-vencidos"
-                          checked={mostrarSoloVencidos}
-                          onCheckedChange={(checked) => setMostrarSoloVencidos(checked === true)}
-                        />
-                        <label htmlFor="mostrar-vencidos" className="text-sm">Solo vencidos</label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="mostrar-por-vencer-24h"
-                          checked={mostrarPorVencer24h}
-                          onCheckedChange={(checked) => setMostrarPorVencer24h(checked === true)}
-                        />
-                        <label htmlFor="mostrar-por-vencer-24h" className="text-sm">Por vencer en 24h</label>
-                      </div>
-                    </div>
+                    <label className="block text-sm font-medium mb-2">Vencimiento</label>
+                    <Select value={filtroVencimiento} onValueChange={(value: 'todos' | 'vencidos' | 'por_vencer_24h') => setFiltroVencimiento(value)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Filtrar por vencimiento" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todos">Todos</SelectItem>
+                        <SelectItem value="vencidos">Solo vencidos</SelectItem>
+                        <SelectItem value="por_vencer_24h">Por vencer en 24h</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
               </div>
@@ -751,9 +818,9 @@ export default function MesaDeAyudaPage() {
                         {getClientName(ticket)}
                     </TableCell>
                     <TableCell>
-                      {ticket.categoria ? (
+                      {ticket.categoria_info?.categoria ? (
                         <Badge className="font-normal border border-gray-300 text-gray-700 bg-gray-50 hover:bg-gray-50">
-                          {capitalizeText(ticket.categoria)}
+                          {capitalizeText(ticket.categoria_info.categoria)}
                         </Badge>
                       ) : (
                         <span className="text-gray-400">N/A</span>
@@ -798,17 +865,23 @@ export default function MesaDeAyudaPage() {
       </Tabs>
 
       {/* Modal para ver detalles del ticket */} 
-      {selectedTicket && (
-         <TicketDetailsModal 
+      {selectedTicketId && (() => {
+        const ticketToShow = tickets.find(t => t.id === selectedTicketId);
+        if (!ticketToShow) return null;
+        
+        return (
+          <TicketDetailsModal 
             isOpen={isModalOpen}
             onClose={() => {
                 setIsModalOpen(false);
-                setSelectedTicket(null);
+                setSelectedTicketId(null);
             }}
-            ticket={selectedTicket}
+            ticket={ticketToShow}
             onTicketUpdated={handleTicketUpdated}
-        />
-      )}
+            getTicketProjects={getTicketProjects}
+          />
+        );
+      })()}
     </div>
   );
 } 

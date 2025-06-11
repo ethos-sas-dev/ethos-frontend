@@ -25,7 +25,7 @@ export const ourFileRouter = {
     })
     .onUploadComplete(async ({ metadata, file }) => {
       console.log("Upload complete for userId:", metadata.userId);
-      console.log("file url", file.url);
+      console.log("file url", file.ufsUrl);
       console.log("file key", file.key);
 
       return { uploadedBy: metadata.userId, fileKey: file.key };
@@ -46,7 +46,7 @@ export const ourFileRouter = {
     .onUploadComplete(async ({ metadata, file }) => {
       // TODO: Implementar lógica de guardado en Supabase si es necesario
       return { 
-        url: file.url,
+        url: file.ufsUrl,
         propertyId: metadata.propertyId
       };
     }),
@@ -69,7 +69,7 @@ export const ourFileRouter = {
     .onUploadComplete(async ({ metadata, file }) => {
       // TODO: Implementar lógica de guardado en Supabase si es necesario
       return { 
-        url: file.url,
+        url: file.ufsUrl,
         emailId: metadata.emailId,
         filename: metadata.filename,
         contentType: metadata.contentType
@@ -95,7 +95,7 @@ export const ourFileRouter = {
     })
     .onUploadComplete(async ({ metadata, file }) => {
       console.log("[ClientDoc] Upload complete for userId:", metadata.userId);
-      console.log("[ClientDoc] file url:", file.url);
+      console.log("[ClientDoc] file url:", file.ufsUrl);
       console.log("[ClientDoc] file key:", file.key);
       
       // Por ahora, solo devolvemos la información básica.
@@ -123,13 +123,13 @@ export const ourFileRouter = {
     .onUploadComplete(async ({ metadata, file }) => {
       console.log("[PaymentProof] Upload complete for userId:", metadata.userId);
       console.log("[PaymentProof] factura ID:", metadata.facturaId);
-      console.log("[PaymentProof] file url:", file.url);
+      console.log("[PaymentProof] file url:", file.ufsUrl);
       console.log("[PaymentProof] file key:", file.key);
       
       return { 
         uploadedBy: metadata.userId, 
         facturaId: metadata.facturaId,
-        fileUrl: file.url,
+        fileUrl: file.ufsUrl,
         fileKey: file.key 
       };
     }),
@@ -152,10 +152,10 @@ export const ourFileRouter = {
     })
     .onUploadComplete(async ({ metadata, file }) => {
       console.log("[ProjectImage] Upload complete for userId:", metadata.userId);
-      console.log("[ProjectImage] file url:", file.url);
+      console.log("[ProjectImage] file url:", file.ufsUrl);
       console.log("[ProjectImage] file key:", file.key);
       
-      return { uploadedBy: metadata.userId, fileKey: file.key, url: file.url };
+      return { uploadedBy: metadata.userId, fileKey: file.key, url: file.ufsUrl };
     }),
 
   // >>> NUEVO ENDPOINT PARA IMÁGENES DE ACCIONES CORRECTIVAS <<<
@@ -178,13 +178,13 @@ export const ourFileRouter = {
     .onUploadComplete(async ({ metadata, file }) => {
       console.log("[TicketActionImage] Upload complete for userId:", metadata.userId);
       console.log("[TicketActionImage] ticket ID:", metadata.ticketId);
-      console.log("[TicketActionImage] file url:", file.url);
+      console.log("[TicketActionImage] file url:", file.ufsUrl);
       console.log("[TicketActionImage] file key:", file.key);
       
       return { 
         uploadedBy: metadata.userId, 
         ticketId: metadata.ticketId,
-        fileUrl: file.url,
+        fileUrl: file.ufsUrl,
         fileKey: file.key 
       };
     }),

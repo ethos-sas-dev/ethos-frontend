@@ -1,7 +1,7 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { Database } from '../../../../../../supabase-ethos-types'; // Corregida la ruta de importación
+import { Database } from '../../../../../../supabase-ethos-types';
 
 // Tipos para la acción correctiva
 type AccionCorrectivaInput = {
@@ -19,7 +19,31 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ ticketId: string }> }
 ) {
-  const supabase = createRouteHandlerClient<Database>({ cookies });
+  const cookieStore = await cookies();
+  
+  const supabase = createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        async getAll() {
+          return cookieStore.getAll();
+        },
+        async setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch {
+            // The `setAll` method was called from a Server Component.
+            // This can be ignored if you have middleware refreshing
+            // user sessions.
+          }
+        },
+      },
+    }
+  );
+  
   const { ticketId: ticketIdStr } = await params;
 
   if (!ticketIdStr || isNaN(parseInt(ticketIdStr))) {
