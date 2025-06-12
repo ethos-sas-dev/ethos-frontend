@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
+import { useAuth } from "../../_lib/auth/AuthContext";
 import { createClient } from "../../../../lib/supabase/client";
 import { Badge } from "@/app/_components/ui/badge";
 import { Button } from "@/app/_components/ui/button";
@@ -14,7 +15,7 @@ import {
   TableRow,
 } from "@/app/_components/ui/table";
 import { Skeleton } from "@/app/_components/ui/skeleton";
-import { AlertCircle, Eye, Search, ArrowUp, ArrowDown, X } from "lucide-react";
+import { AlertCircle, Eye, Search, ArrowUp, ArrowDown, X, MenuIcon, Info } from "lucide-react";
 import { Alert, AlertDescription } from "@/app/_components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/app/_components/ui/tabs";
 import { Input } from "@/app/_components/ui/input";
@@ -23,6 +24,13 @@ import { useDebounce } from '@uidotdev/usehooks';
 import { Database } from "../../../../supabase-ethos-types";
 import { TicketDetailsModal } from "./_components/TicketDetailsModal";
 import { TicketStats } from "./_components/TicketStats";
+import { CategoriesModal } from "./_components/CategoriesModal";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/app/_components/ui/tooltip";
 
 // Definición del tipo para una Acción Correctiva
 export type AccionCorrectivaItem = {
@@ -38,6 +46,7 @@ export type Ticket = Database["public"]["Tables"]["tickets"]["Row"] & {
     id: number;
     categoria: string;
     dias_vencimiento: number;
+    descripcion: string | null;
   } | null;
   cliente?: {
     id: number;
@@ -65,8 +74,10 @@ export type Ticket = Database["public"]["Tables"]["tickets"]["Row"] & {
   } | null;
 };
 
-export default function MesaDeAyudaPage() {
+export default function MesaDeAyuda() {
   const supabase = createClient();
+  const { role, isLoading: isAuthLoading } = useAuth();
+  const isDirector = role === 'Directorio';
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +85,9 @@ export default function MesaDeAyudaPage() {
   // Estados para el modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
+
+  // Estados para modal de categorías
+  const [isCategoriesModalOpen, setIsCategoriesModalOpen] = useState(false);
 
   // Estados para filtros
   const [filtroCategoria, setFiltroCategoria] = useState<string>('todos');
@@ -105,7 +119,7 @@ export default function MesaDeAyudaPage() {
   };
 
   // Estados para configuraciones de vencimiento (ahora categorias con dias_vencimiento)
-  const [configuracionesVencimiento, setConfiguracionesVencimiento] = useState<any[]>([]);
+  const [configuracionesVencimiento, setConfiguracionesVencimiento] = useState<{id: number; categoria: string; dias_vencimiento: number}[]>([]);
   
   // Estado para mapeo de clientes a sus proyectos (fallback)
   const [clienteProyectos, setClienteProyectos] = useState<Map<number, any[]>>(new Map());
@@ -113,12 +127,8 @@ export default function MesaDeAyudaPage() {
   // Función para obtener vencimiento por defecto según categoría
   const getDefaultVencimiento = (categoriaId: number | null): number => {
     if (!categoriaId) return 5; // Fallback si no hay categoría
-    
-    const configuracion = configuracionesVencimiento.find(
-      config => config.id === categoriaId
-    );
-    
-    return configuracion ? configuracion.dias_vencimiento : 5; // Fallback
+    const config = configuracionesVencimiento.find(c => c.id === categoriaId);
+    return config ? config.dias_vencimiento : 5; // Fallback
   };
 
   // Función para verificar si un ticket está vencido
@@ -315,120 +325,121 @@ export default function MesaDeAyudaPage() {
     return stats;
   }, [ticketsFiltrados, configuracionesVencimiento]);
 
-  useEffect(() => {
-    async function fetchData() {
-      setIsLoading(true);
-      setError(null);
-      try {
-        // Cargar tickets, configuraciones de vencimiento y propiedades de clientes en paralelo
-        const [ticketsResponse, categoriasResponse, propiedadesResponse] = await Promise.all([
-          supabase
-            .from("tickets") 
-            .select(`
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      // Cargar tickets, configuraciones de vencimiento y propiedades de clientes en paralelo
+      const [ticketsResponse, categoriasResponse, propiedadesResponse] = await Promise.all([
+        supabase
+          .from("tickets") 
+          .select(`
+            id,
+            titulo,
+            descripcion,
+            estado,
+            categoria,
+            created_at,
+            acciones_correctivas,
+            numero_contacto_ticket,
+            media_links,
+            categoria_info:categoria (
               id,
-              titulo,
-              descripcion,
-              estado,
               categoria,
-              created_at,
-              acciones_correctivas,
-              numero_contacto_ticket,
-              media_links,
-              categoria_info:categoria (
-                id,
-                categoria,
-                dias_vencimiento
+              dias_vencimiento,
+              descripcion
+            ),
+            cliente:perfil_cliente_id (
+              id,
+              tipo_persona,
+              contacto_administrativo,
+              contacto_gerente,
+              persona_natural:persona_natural_id (
+                razon_social,
+                cedula,
+                ruc
               ),
-              cliente:perfil_cliente_id (
-                id,
-                tipo_persona,
-                contacto_administrativo,
-                contacto_gerente,
-                persona_natural:persona_natural_id (
-                  razon_social,
-                  cedula,
-                  ruc
-                ),
-                persona_juridica:persona_juridica_id (
-                  razon_social,
-                  nombre_comercial,
-                  ruc
-                )
-              ),
-              propiedad:propiedad_id (
-                id,
-                identificadores,
-                proyecto:proyecto_id (
-                  id,
-                  nombre
-                )
+              persona_juridica:persona_juridica_id (
+                razon_social,
+                nombre_comercial,
+                ruc
               )
-            `)
-            .order("created_at", { ascending: false }),
-          supabase
-            .from("categoria_tickets")
-            .select("*")
-            .eq("activo", true),
-          supabase
-            .from("propiedades")
-            .select(`
-              propietario_id,
-              ocupante_id,
+            ),
+            propiedad:propiedad_id (
+              id,
+              identificadores,
               proyecto:proyecto_id (
                 id,
                 nombre
               )
-            `)
-        ]);
+            )
+          `)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("categoria_tickets")
+          .select("*")
+          .eq("activo", true),
+        supabase
+          .from("propiedades")
+          .select(`
+            propietario_id,
+            ocupante_id,
+            proyecto:proyecto_id (
+              id,
+              nombre
+            )
+          `)
+      ]);
 
-        if (ticketsResponse.error) {
-          throw ticketsResponse.error;
-        }
-
-        if (categoriasResponse.error) {
-          console.warn("Error cargando categorías de tickets:", categoriasResponse.error);
-        }
-
-        if (propiedadesResponse.error) {
-          console.warn("Error cargando propiedades de clientes:", propiedadesResponse.error);
-        }
-
-        // Crear mapeo de clientes a proyectos
-        const clienteProyectosMap = new Map<number, any[]>();
-        if (propiedadesResponse.data) {
-          propiedadesResponse.data.forEach((propiedad: any) => {
-            const clienteIds = [propiedad.propietario_id, propiedad.ocupante_id].filter(Boolean);
-            clienteIds.forEach((clienteId: number) => {
-              if (!clienteProyectosMap.has(clienteId)) {
-                clienteProyectosMap.set(clienteId, []);
-              }
-              if (propiedad.proyecto && !clienteProyectosMap.get(clienteId)!.some((p: any) => p.id === propiedad.proyecto.id)) {
-                clienteProyectosMap.get(clienteId)!.push(propiedad.proyecto);
-              }
-            });
-          });
-        }
-
-        console.log("Datos de tickets recibidos (con joins):", ticketsResponse.data);
-        if (ticketsResponse.data && ticketsResponse.data.length > 0) {
-            console.log("Primer ticket (con joins):", ticketsResponse.data[0]);
-            console.log("Cliente del primer ticket:", ticketsResponse.data[0].cliente);
-            console.log("Propiedad del primer ticket:", ticketsResponse.data[0].propiedad);
-        }
-
-        setTickets(ticketsResponse.data as any[] || []);
-        setConfiguracionesVencimiento(categoriasResponse.data || []);
-        setClienteProyectos(clienteProyectosMap);
-      } catch (err: any) {
-        console.error("Error fetching data:", err);
-        setError("No se pudieron cargar los datos. Inténtalo de nuevo más tarde.");
-      } finally {
-        setIsLoading(false);
+      if (ticketsResponse.error) {
+        throw ticketsResponse.error;
       }
-    }
 
-    fetchData();
+      if (categoriasResponse.error) {
+        console.warn("Error cargando categorías de tickets:", categoriasResponse.error);
+      }
+
+      if (propiedadesResponse.error) {
+        console.warn("Error cargando propiedades de clientes:", propiedadesResponse.error);
+      }
+
+      // Crear mapeo de clientes a proyectos
+      const clienteProyectosMap = new Map<number, any[]>();
+      if (propiedadesResponse.data) {
+        propiedadesResponse.data.forEach((propiedad: any) => {
+          const clienteIds = [propiedad.propietario_id, propiedad.ocupante_id].filter(Boolean);
+          clienteIds.forEach((clienteId: number) => {
+            if (!clienteProyectosMap.has(clienteId)) {
+              clienteProyectosMap.set(clienteId, []);
+            }
+            if (propiedad.proyecto && !clienteProyectosMap.get(clienteId)!.some((p: any) => p.id === propiedad.proyecto.id)) {
+              clienteProyectosMap.get(clienteId)!.push(propiedad.proyecto);
+            }
+          });
+        });
+      }
+
+      console.log("Datos de tickets recibidos (con joins):", ticketsResponse.data);
+      if (ticketsResponse.data && ticketsResponse.data.length > 0) {
+          console.log("Primer ticket (con joins):", ticketsResponse.data[0]);
+          console.log("Cliente del primer ticket:", ticketsResponse.data[0].cliente);
+          console.log("Propiedad del primer ticket:", ticketsResponse.data[0].propiedad);
+      }
+
+      setTickets(ticketsResponse.data as any[] || []);
+      setConfiguracionesVencimiento(categoriasResponse.data || []);
+      setClienteProyectos(clienteProyectosMap);
+    } catch (err: any) {
+      console.error("Error fetching data:", err);
+      setError("No se pudieron cargar los datos. Inténtalo de nuevo más tarde.");
+    } finally {
+      setIsLoading(false);
+    }
   }, [supabase]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("es-ES", {
@@ -529,10 +540,13 @@ export default function MesaDeAyudaPage() {
     }
   };
 
-  const truncateText = (text: string | null | undefined, maxLength: number = 20): string => {
-    if (!text) return "Sin título";
-    if (text.length <= maxLength) return text;
-    return `${text.substring(0, maxLength)}...`;
+  const truncateText = (text: string | null | undefined, maxLength: number = 20): { displayText: string; isTruncated: boolean } => {
+    if (!text) return { displayText: "Sin título", isTruncated: false };
+    if (text.length <= maxLength) return { displayText: text, isTruncated: false };
+    return {
+      displayText: `${text.substring(0, maxLength)}...`,
+      isTruncated: true,
+    };
   };
 
   // Obtener listas únicas para filtros
@@ -616,272 +630,328 @@ export default function MesaDeAyudaPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Mesa de Ayuda</h1>
-          <p className="text-gray-600">Gestiona y visualiza los tickets de soporte.</p>
-        </div>
-      </div>
-
-      <TicketStats stats={ticketStats} />
-
-      {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {/* Tabs para Activos vs Completados */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2 gap-2">
-          <TabsTrigger 
-            value="activos" 
-            className="data-[state=inactive]:border data-[state=inactive]:border-gray-300 data-[state=inactive]:bg-white data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-50 data-[state=active]:bg-[#008A4B] data-[state=active]:text-white data-[state=active]:shadow-sm transition-all duration-200"
-          >
-            Tickets Activos
-          </TabsTrigger>
-          <TabsTrigger 
-            value="completados"
-            className="data-[state=inactive]:border data-[state=inactive]:border-gray-300 data-[state=inactive]:bg-white data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-50 data-[state=active]:bg-[#008A4B] data-[state=active]:text-white data-[state=active]:shadow-sm transition-all duration-200"
-          >
-            Tickets Completados
-          </TabsTrigger>
-        </TabsList>
-        
-        <TabsContent value={activeTab} className="space-y-4">
-          {/* Barra de búsqueda y filtros */}
-          <Card>
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <CardTitle>
-                  {activeTab === 'activos' ? 'Tickets Activos' : 'Tickets Completados'}
-                </CardTitle>
-                {hasActiveFilters() && (
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={clearAllFilters}
-                    className="flex items-center gap-2 text-gray-600 hover:text-gray-800"
-                  >
-                    <X className="h-4 w-4" />
-                    Limpiar filtros
-                  </Button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Filtro por Categoría */}
-                <div>
-                  <label className="block text-sm font-medium mb-2">Categoría</label>
-                  <Select value={filtroCategoria} onValueChange={setFiltroCategoria}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Todas las categorías" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="todos">Todas</SelectItem>
-                      {categoriasUnicas.map(categoria => (
-                        <SelectItem key={categoria} value={categoria}>{categoria}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Filtro por Estado - Solo en activos */}
-                {activeTab === 'activos' && (
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Estado</label>
-                    <Select value={filtroEstado} onValueChange={setFiltroEstado}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Todos los estados" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="todos">Todos</SelectItem>
-                        <SelectItem value="abierto">Abierto</SelectItem>
-                        <SelectItem value="en_progreso">En Progreso</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-                {/* Filtro por Proyecto */}
-                <div>
-                  <label className="block text-sm font-medium mb-2">Proyecto</label>
-                  <Select value={filtroProyecto} onValueChange={setFiltroProyecto}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Todos los proyectos" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="todos">Todos</SelectItem>
-                      {proyectosUnicos.map(proyecto => (
-                        <SelectItem key={proyecto?.id || 'sin-id'} value={proyecto?.id?.toString() || ''}>
-                          {proyecto?.nombre || 'Sin nombre'}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Filtros Adicionales - Solo en activos */}
-                {activeTab === 'activos' && (
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Vencimiento</label>
-                    <Select value={filtroVencimiento} onValueChange={(value: 'todos' | 'vencidos' | 'por_vencer_24h') => setFiltroVencimiento(value)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Filtrar por vencimiento" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="todos">Todos</SelectItem>
-                        <SelectItem value="vencidos">Solo vencidos</SelectItem>
-                        <SelectItem value="por_vencer_24h">Por vencer en 24h</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between items-center">
-            <div>
-              <CardTitle>Listado de Tickets</CardTitle>
-              <CardDescription>
-                Mostrando {ticketsFiltrados.length} de {tickets.length} tickets.
-              </CardDescription>
-            </div>
-            <div className="relative w-70 transition-all duration-300 ease-in-out focus-within:w-80">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                type="text"
-                placeholder="Buscar tickets, clientes, proyectos..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 w-full transition-all duration-300 ease-in-out"
-              />
-            </div>
+    <TooltipProvider>
+      <div className="p-6 space-y-6">
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold">Mesa de Ayuda</h1>
+            <p className="text-gray-600">Gestiona y visualiza los tickets de soporte.</p>
           </div>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-4">
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-            </div>
-          ) : ticketsFiltrados.length === 0 && !error ? (
-            <div className="text-center py-8">
-              <p className="text-gray-500">No hay tickets que coincidan con los filtros.</p>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Título</TableHead>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>Categoría</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>
-                    <button 
-                      onClick={handleSortByVencimiento}
-                      className="flex items-center hover:text-gray-600 font-medium"
+          <div>
+            {!isAuthLoading && (
+              <Button variant="outline" onClick={() => setIsCategoriesModalOpen(true)}>
+                {isDirector ? <MenuIcon className="h-4 w-4" /> : <Info className="h-4 w-4" />}
+                {isDirector ? 'Gestión de Categorías de Tickets' : 'Categorías de Tickets'}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <TicketStats stats={ticketStats} />
+
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {/* Tabs para Activos vs Completados */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-2 gap-2">
+            <TabsTrigger 
+              value="activos" 
+              className="data-[state=inactive]:border data-[state=inactive]:border-gray-300 data-[state=inactive]:bg-white data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-50 data-[state=active]:bg-[#008A4B] data-[state=active]:text-white data-[state=active]:shadow-sm transition-all duration-200"
+            >
+              Tickets Activos
+            </TabsTrigger>
+            <TabsTrigger 
+              value="completados"
+              className="data-[state=inactive]:border data-[state=inactive]:border-gray-300 data-[state=inactive]:bg-white data-[state=inactive]:text-gray-700 data-[state=inactive]:hover:bg-gray-50 data-[state=active]:bg-[#008A4B] data-[state=active]:text-white data-[state=active]:shadow-sm transition-all duration-200"
+            >
+              Tickets Completados
+            </TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value={activeTab} className="space-y-4">
+            {/* Barra de búsqueda y filtros */}
+            <Card>
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <CardTitle>
+                    {activeTab === 'activos' ? 'Tickets Activos' : 'Tickets Completados'}
+                  </CardTitle>
+                  {hasActiveFilters() && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={clearAllFilters}
+                      className="flex items-center gap-2 text-gray-600 hover:text-gray-800"
                     >
-                      Vencimiento
-                      {renderVencimientoSortIcon()}
-                    </button>
-                  </TableHead>
-                  <TableHead>
-                    <button 
-                      onClick={handleSortByDate}
-                      className="flex items-center hover:text-gray-600 font-medium"
-                    >
-                      Creado en
-                      {renderSortIcon()}
-                    </button>
-                  </TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {ticketsFiltrados.map((ticket) => (
-                  <TableRow key={ticket.id}>
-                    <TableCell className="font-medium">#{ticket.id}</TableCell>
-                    <TableCell className="whitespace-nowrap overflow-hidden text-ellipsis max-w-xs">
-                      <>{truncateText(ticket.titulo)}</>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap overflow-hidden text-ellipsis max-w-[150px]">
-                        {getClientName(ticket)}
-                    </TableCell>
-                    <TableCell>
-                      {ticket.categoria_info?.categoria ? (
-                        <Badge className="font-normal border border-gray-300 text-gray-700 bg-gray-50 hover:bg-gray-50">
-                          {capitalizeText(ticket.categoria_info.categoria)}
-                        </Badge>
-                      ) : (
-                        <span className="text-gray-400">N/A</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={getBadgeVariant(ticket.estado)}>
-                        {capitalizeText(ticket.estado)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {(() => {
-                        const vencimientoInfo = getVencimientoInfo(ticket);
-                        return (
-                          <Badge className={vencimientoInfo.variant}>
-                            {vencimientoInfo.texto}
-                          </Badge>
-                        );
-                      })()}
-                    </TableCell>
-                    <TableCell>{formatShortDate(ticket.created_at)}</TableCell>
-                    <TableCell className="text-right">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => handleOpenModal(ticket)}
-                        className="flex items-center gap-2"
+                      <X className="h-4 w-4" />
+                      Limpiar filtros
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Filtro por Categoría */}
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Categoría</label>
+                    <Select value={filtroCategoria} onValueChange={setFiltroCategoria}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Todas las categorías" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todos">Todas</SelectItem>
+                        {categoriasUnicas.map(categoria => (
+                          <SelectItem key={categoria} value={categoria}>{categoria}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Filtro por Estado - Solo en activos */}
+                  {activeTab === 'activos' && (
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Estado</label>
+                      <Select value={filtroEstado} onValueChange={setFiltroEstado}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Todos los estados" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="todos">Todos</SelectItem>
+                          <SelectItem value="abierto">Abierto</SelectItem>
+                          <SelectItem value="en_progreso">En Progreso</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Filtro por Proyecto */}
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Proyecto</label>
+                    <Select value={filtroProyecto} onValueChange={setFiltroProyecto}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Todos los proyectos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todos">Todos</SelectItem>
+                        {proyectosUnicos.map(proyecto => (
+                          <SelectItem key={proyecto?.id || 'sin-id'} value={proyecto?.id?.toString() || ''}>
+                            {proyecto?.nombre || 'Sin nombre'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Filtros Adicionales - Solo en activos */}
+                  {activeTab === 'activos' && (
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Vencimiento</label>
+                      <Select value={filtroVencimiento} onValueChange={(value: 'todos' | 'vencidos' | 'por_vencer_24h') => setFiltroVencimiento(value)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Filtrar por vencimiento" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="todos">Todos</SelectItem>
+                          <SelectItem value="vencidos">Solo vencidos</SelectItem>
+                          <SelectItem value="por_vencer_24h">Por vencer en 24h</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex justify-between items-center">
+              <div>
+                <CardTitle>Listado de Tickets</CardTitle>
+                <CardDescription className="mt-1">
+                  Mostrando {ticketsFiltrados.length} de {tickets.length} tickets.
+                </CardDescription>
+              </div>
+              <div className="relative w-70 transition-all duration-300 ease-in-out focus-within:w-80">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  type="text"
+                  placeholder="Buscar tickets, clientes, proyectos..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 w-full transition-all duration-300 ease-in-out"
+                />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="space-y-4">
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+              </div>
+            ) : ticketsFiltrados.length === 0 && !error ? (
+              <div className="text-center py-8">
+                <p className="text-gray-500">No hay tickets que coincidan con los filtros.</p>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Título</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Categoría</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>
+                      <button 
+                        onClick={handleSortByVencimiento}
+                        className="flex items-center hover:text-gray-600 font-medium"
                       >
-                        <Eye className="h-4 w-4" />
-                        Ver Detalles
-                      </Button>
-                    </TableCell>
+                        Vencimiento
+                        {renderVencimientoSortIcon()}
+                      </button>
+                    </TableHead>
+                    <TableHead>
+                      <button 
+                        onClick={handleSortByDate}
+                        className="flex items-center hover:text-gray-600 font-medium"
+                      >
+                        Creado en
+                        {renderSortIcon()}
+                      </button>
+                    </TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+                </TableHeader>
+                <TableBody>
+                  {ticketsFiltrados.map((ticket) => {
+                    const titleInfo = truncateText(ticket.titulo);
+                    return (
+                      <TableRow key={ticket.id}>
+                        <TableCell className="font-medium">#{ticket.id}</TableCell>
+                        <TableCell className="whitespace-nowrap overflow-hidden text-ellipsis max-w-xs">
+                          {titleInfo.isTruncated ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="cursor-help underline decoration-dotted decoration-gray-400 underline-offset-2">
+                                  {titleInfo.displayText}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent className="text-sm">
+                                <p>{ticket.titulo}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : (
+                            <span>{titleInfo.displayText}</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap overflow-hidden text-ellipsis max-w-[150px]">
+                            {getClientName(ticket)}
+                        </TableCell>
+                        <TableCell>
+                          {ticket.categoria_info?.descripcion ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div
+                                    className="inline-block cursor-help"
+                                    onClick={() => setFiltroCategoria(ticket.categoria_info?.categoria || 'todos')}
+                                >
+                                  <Badge
+                                      className="font-normal border border-gray-300 text-gray-700 bg-gray-50"
+                                  >
+                                      {capitalizeText(ticket.categoria_info?.categoria || null)}
+                                  </Badge>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent className="text-sm">
+                                <p>{ticket.categoria_info.descripcion}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : (
+                            <div
+                                  className="inline-block cursor-pointer"
+                                  onClick={() => setFiltroCategoria(ticket.categoria_info?.categoria || 'todos')}
+                              >
+                              <Badge
+                                  className="font-normal border border-gray-300 text-gray-700 bg-gray-50"
+                              >
+                                  {capitalizeText(ticket.categoria_info?.categoria || null)}
+                              </Badge>
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={getBadgeVariant(ticket.estado)}>
+                            {capitalizeText(ticket.estado)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {(() => {
+                            const vencimientoInfo = getVencimientoInfo(ticket);
+                            return (
+                              <Badge className={vencimientoInfo.variant}>
+                                {vencimientoInfo.texto}
+                              </Badge>
+                            );
+                          })()}
+                        </TableCell>
+                        <TableCell>{formatShortDate(ticket.created_at)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => handleOpenModal(ticket)}
+                            className="flex items-center gap-2"
+                          >
+                            <Eye className="h-4 w-4" />
+                            Ver Detalles
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
 
-        </TabsContent>
-      </Tabs>
+          </TabsContent>
+        </Tabs>
 
-      {/* Modal para ver detalles del ticket */} 
-      {selectedTicketId && (() => {
-        const ticketToShow = tickets.find(t => t.id === selectedTicketId);
-        if (!ticketToShow) return null;
-        
-        return (
-          <TicketDetailsModal 
-            isOpen={isModalOpen}
-            onClose={() => {
-                setIsModalOpen(false);
-                setSelectedTicketId(null);
-            }}
-            ticket={ticketToShow}
-            onTicketUpdated={handleTicketUpdated}
-            getTicketProjects={getTicketProjects}
-          />
-        );
-      })()}
-    </div>
+        {/* Modal para ver detalles del ticket */} 
+        {selectedTicketId && (() => {
+          const ticketToShow = tickets.find(t => t.id === selectedTicketId);
+          if (!ticketToShow) return null;
+          
+          return (
+            <TicketDetailsModal 
+              isOpen={isModalOpen}
+              onClose={() => {
+                  setIsModalOpen(false);
+                  setSelectedTicketId(null);
+              }}
+              ticket={ticketToShow}
+              onTicketUpdated={handleTicketUpdated}
+              getTicketProjects={getTicketProjects}
+            />
+          );
+        })()}
+
+        <CategoriesModal
+          isOpen={isCategoriesModalOpen}
+          onClose={() => setIsCategoriesModalOpen(false)}
+          userRole={role}
+          onCategoriesChange={fetchData}
+        />
+      </div>
+    </TooltipProvider>
   );
 } 

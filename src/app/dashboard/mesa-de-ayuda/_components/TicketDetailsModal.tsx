@@ -15,17 +15,18 @@ import { Database } from "../../../../../supabase-ethos-types";
 
 // Definición del tipo para una Acción Correctiva
 type AccionCorrectivaItem = {
-    fecha: string;
-    descripcion: string;
-    imagen_url: string | null; 
-}; 
+  fecha: string;
+  descripcion: string;
+  imagen_url: string | null;
+};
 
 type Ticket = Database["public"]["Tables"]["tickets"]["Row"] & {
-  acciones_correctivas: AccionCorrectivaItem[] | null; 
+  acciones_correctivas: AccionCorrectivaItem[] | null;
   categoria_info?: {
     id: number;
     categoria: string;
     dias_vencimiento: number;
+    descripcion: string | null;
   } | null;
   cliente?: {
     id: number;
@@ -42,7 +43,7 @@ type Ticket = Database["public"]["Tables"]["tickets"]["Row"] & {
     } | null;
     contacto_administrativo?: any | null;
     contacto_gerente?: any | null;
-  } | null; 
+  } | null;
   propiedad?: {
     id: number;
     identificadores?: any | null;
@@ -64,7 +65,7 @@ interface TicketDetailsModalProps {
 export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, getTicketProjects }: TicketDetailsModalProps) {
   // Estado local del ticket para evitar pérdida de datos durante actualizaciones
   const [localTicket, setLocalTicket] = useState<Ticket>(ticket);
-  
+
   const [selectedStatus, setSelectedStatus] = useState<Database["public"]["Enums"]["ticket_estado"] | null>(localTicket.estado || null);
   const [newActionDescription, setNewActionDescription] = useState('');
   const [showAddAction, setShowAddAction] = useState(false);
@@ -75,7 +76,7 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [showImageUpload, setShowImageUpload] = useState(false);
-  
+
   // Estado para tracking de imágenes que fallaron al cargar
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
 
@@ -98,7 +99,7 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
       setIsUploadingImage(false);
       setShowImageUpload(false);
       setFailedImages(new Set());
-    } 
+    }
   }, [isOpen, localTicket]);
 
   // Función para capitalizar texto
@@ -111,7 +112,7 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("es-ES", {
       year: "numeric",
-      month: "long", 
+      month: "long",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
@@ -131,7 +132,7 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
         return "bg-gray-100 text-gray-800 hover:bg-gray-100";
     }
   };
-  
+
   const getPriorityBadgeVariant = (priority: Database["public"]["Enums"]["ticket_prioridad"] | null) => {
     switch (priority?.toLowerCase()) {
       case "baja":
@@ -172,11 +173,11 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
       if (!response.ok) {
         throw new Error(updatedTicketData.error || 'Error al actualizar el estado');
       }
-      
+
       // Actualizar con los datos confirmados de la API
       setLocalTicket(updatedTicketData);
       onTicketUpdated(updatedTicketData as Ticket);
-      
+
       console.log("Estado actualizado para ticket (confirmado por API):", localTicket.id);
 
     } catch (error: any) {
@@ -202,13 +203,13 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
     const currentImageUrl = uploadedImageUrl;
 
     setIsSubmittingAction(true);
-    
+
     try {
       const response = await fetch(`/api/tickets/${localTicket.id}/add-corrective-action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          descripcion: currentDescription, 
+        body: JSON.stringify({
+          descripcion: currentDescription,
           imagen_url: currentImageUrl
         }),
       });
@@ -218,24 +219,24 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
       if (!response.ok) {
         throw new Error(updatedTicketData.error || 'Error al añadir la acción correctiva');
       }
-      
+
       // Actualizar el estado local del ticket primero
       setLocalTicket(updatedTicketData);
-      
+
       // Luego notificar al componente padre
       onTicketUpdated(updatedTicketData as Ticket);
-      
+
       // Actualizar el estado del modal si cambió
       if (updatedTicketData.estado && updatedTicketData.estado !== selectedStatus) {
         setSelectedStatus(updatedTicketData.estado);
       }
-      
+
       // Resetear el formulario solo después del éxito
       setNewActionDescription('');
       setShowAddAction(false);
       setUploadedImageUrl(null);
       setShowImageUpload(false);
-      
+
       console.log("Acción Correctiva Añadida exitosamente para ticket:", localTicket.id);
 
     } catch (error: any) {
@@ -247,17 +248,101 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
     }
   };
 
+  // Función para parsear el número de teléfono y generar la URL de Recado
+  const getRecadoUrl = (phoneNumber: string | null) => {
+    if (!phoneNumber) return null;
+
+    // Limpiar el número: remover espacios, guiones, paréntesis, etc.
+    let cleanNumber = phoneNumber.replace(/[\s\-\(\)\+]/g, '');
+
+    // Si no empieza con código de país, asumir Ecuador (593)
+    if (!cleanNumber.startsWith('593') && cleanNumber.length === 10) {
+      // Remover el 0 inicial si existe y añadir código de país
+      if (cleanNumber.startsWith('0')) {
+        cleanNumber = '593' + cleanNumber.substring(1);
+      } else {
+        cleanNumber = '593' + cleanNumber;
+      }
+    }
+
+    return `https://recado.co/admin/conversations/${cleanNumber}@c.us`;
+  };
+
+  // Verificar si se puede mostrar el botón de Recado
+  const canShowRecadoButton = localTicket.numero_contacto_ticket && localTicket.numero_contacto_ticket.trim() !== '';
+  const recadoUrl = getRecadoUrl(localTicket.numero_contacto_ticket);
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto [&>button]:hidden">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <MessageSquare className="h-5 w-5" />
-            Ticket #{localTicket.id} - {localTicket.titulo || "Sin título"}
-          </DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5" />
+              Ticket #{localTicket.id}
+            </DialogTitle>
+
+            {/* Botón Responder en Recado */}
+            {canShowRecadoButton && recadoUrl && (
+              <Button
+                variant="default"
+                onClick={() => window.open(recadoUrl, '_blank')}
+                className="flex items-center gap-2 text-sm font-medium px-3 py-2 rounded-md transition-all border border-gray-300 group cursor-pointer"
+                style={{ backgroundColor: '#FFEBA2', color: '#000' }}
+              >
+                <img
+                  src="/recado-logo.png"
+                  alt="Recado"
+                  className="w-5 h-5 mr-0.5 transition-transform duration-600 group-hover:rotate-360"
+                  loading="eager"
+                  style={{ imageRendering: 'crisp-edges' }}
+                />
+                Responder en Recado
+              </Button>
+            )}
+          </div>
         </DialogHeader>
 
         <div className="space-y-6">
+          {/* Información General */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Información General</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Título del Ticket */}
+              {localTicket.titulo && (
+                <div>
+                  <Label className="text-sm font-medium">Título:</Label>
+                  <p className="mt-1 text-sm bg-gray-50 p-3 rounded-md text-gray-900">{localTicket.titulo || "Sin título"}</p>
+                </div>
+              )}
+
+              {localTicket.descripcion && (
+                <div className="pb-3">
+                  <Label className="text-sm font-medium">Descripción:</Label>
+                  <p className="mt-1 text-sm pb-2 bg-gray-50 p-3 rounded-md text-gray-900">{localTicket.descripcion}</p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex items-center gap-2">
+                  <Building className="h-4 w-4 mb-0.5 text-gray-500" />
+                  <span className="text-sm text-gray-900">Categoría:</span>
+                  <Badge className="font-normal border border-gray-300 text-gray-900 bg-gray-50">
+                    {capitalizeText(localTicket.categoria_info?.categoria || null)}
+                  </Badge>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4 mb-0.5 text-gray-500" />
+                  <span className="text-sm text-gray-900">Creado:</span>
+                  <span className="text-sm">{localTicket.created_at ? formatDate(localTicket.created_at) : "Sin fecha"}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Información del Cliente y Propiedad */}
           <Card>
             <CardHeader>
@@ -272,19 +357,18 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                   <div>
                     <Label className="text-sm font-medium">Nombre/Razón Social:</Label>
                     <p className="text-sm text-gray-700 mt-1">
-                      {(localTicket as any).cliente?.tipo_persona === 'Natural' 
+                      {(localTicket as any).cliente?.tipo_persona === 'Natural'
                         ? (localTicket as any).cliente?.persona_natural?.razon_social || 'Sin nombre'
                         : (localTicket as any).cliente?.persona_juridica?.razon_social || (localTicket as any).cliente?.persona_juridica?.nombre_comercial || 'Sin razón social'
                       }
                     </p>
                   </div>
-                  
+
                   <div>
                     <Label className="text-sm font-medium">Identificación:</Label>
                     <p className="text-sm text-gray-700 mt-1">
-                      {(localTicket as any).cliente?.tipo_persona === 'Natural' 
-                        ? `${(localTicket as any).cliente?.persona_natural?.cedula ? 'C.I: ' + (localTicket as any).cliente.persona_natural.cedula : ''}${
-                            (localTicket as any).cliente?.persona_natural?.ruc ? ' | RUC: ' + (localTicket as any).cliente.persona_natural.ruc : ''
+                      {(localTicket as any).cliente?.tipo_persona === 'Natural'
+                        ? `${(localTicket as any).cliente?.persona_natural?.cedula ? 'C.I: ' + (localTicket as any).cliente.persona_natural.cedula : ''}${(localTicket as any).cliente?.persona_natural?.ruc ? ' | RUC: ' + (localTicket as any).cliente.persona_natural.ruc : ''
                           }`.trim() || 'Sin identificación'
                         : (localTicket as any).cliente?.persona_juridica?.ruc ? 'RUC: ' + (localTicket as any).cliente.persona_juridica.ruc : 'Sin RUC'
                       }
@@ -301,10 +385,10 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                   <div>
                     <Label className="text-sm font-medium">Teléfono de contacto:</Label>
                     <p className="text-sm text-gray-700 mt-1">
-                      {localTicket.numero_contacto_ticket || 
-                       (localTicket as any).cliente?.contacto_administrativo?.telefono || 
-                       (localTicket as any).cliente?.contacto_gerente?.telefono || 
-                       'Sin teléfono registrado'}
+                      {localTicket.numero_contacto_ticket ||
+                        (localTicket as any).cliente?.contacto_administrativo?.telefono ||
+                        (localTicket as any).cliente?.contacto_gerente?.telefono ||
+                        'Sin teléfono registrado'}
                     </p>
                   </div>
                 </div>
@@ -322,9 +406,9 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                   <div>
                     <Label className="text-xs text-gray-500">Proyecto(s):</Label>
                     {(() => {
-                      const proyectos = getTicketProjects ? getTicketProjects(localTicket) : 
+                      const proyectos = getTicketProjects ? getTicketProjects(localTicket) :
                         ((localTicket as any).propiedad?.proyecto ? [(localTicket as any).propiedad.proyecto] : []);
-                      
+
                       if (proyectos.length === 0) {
                         return <p className="text-sm text-gray-500">Sin proyecto asignado</p>;
                       } else if (proyectos.length === 1) {
@@ -351,11 +435,11 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                       <p className="text-sm text-gray-700">
                         {(() => {
                           const identificadores = (localTicket as any).propiedad?.identificadores as Record<string, any> | undefined;
-                          if (identificadores && 
-                              typeof identificadores.inferior === 'string' && 
-                              typeof identificadores.superior === 'string' && 
-                              typeof identificadores.idInferior !== 'undefined' && 
-                              typeof identificadores.idSuperior !== 'undefined') {
+                          if (identificadores &&
+                            typeof identificadores.inferior === 'string' &&
+                            typeof identificadores.superior === 'string' &&
+                            typeof identificadores.idInferior !== 'undefined' &&
+                            typeof identificadores.idSuperior !== 'undefined') {
                             return `${identificadores.inferior} ${identificadores.idInferior}, ${identificadores.superior} ${identificadores.idSuperior}`;
                           } else if (identificadores) {
                             // Fallback para otros formatos de identificadores, si los hubiera
@@ -370,37 +454,6 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                   )}
                 </div>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Información General */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Información General</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 gap-4">
-                <div className="flex items-center gap-2">
-                  <Building className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm text-gray-600">Categoría:</span>
-                                      <Badge className="font-normal border border-gray-300 text-gray-700 bg-gray-50">
-                      {capitalizeText(localTicket.categoria_info?.categoria || null)}
-                    </Badge>
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <CalendarDays className="h-4 w-4 text-gray-500" />
-                <span className="text-sm text-gray-600">Creado:</span>
-                <span className="text-sm">{localTicket.created_at ? formatDate(localTicket.created_at) : "Sin fecha"}</span>
-              </div>
-
-              {localTicket.descripcion && (
-                <div>
-                  <Label className="text-sm font-medium">Descripción:</Label>
-                  <p className="mt-1 text-sm text-gray-700 bg-gray-50 p-3 rounded-md">{localTicket.descripcion}</p>
-                </div>
-              )}
             </CardContent>
           </Card>
 
@@ -422,11 +475,11 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                     const fileName = mediaUrl.split('/').pop()?.split('?')[0] || `Archivo ${index + 1}`;
                     // Determinar si la imagen falló al cargar
                     const isFailedImage = failedImages.has(mediaUrl);
-                    
+
                     const handleImageError = () => {
                       setFailedImages(prev => new Set([...prev, mediaUrl]));
                     };
-                    
+
                     return (
                       <div key={index} className="border rounded-lg bg-gray-50 overflow-hidden">
                         {/* Header con info del archivo */}
@@ -452,12 +505,12 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                             Abrir
                           </Button>
                         </div>
-                        
+
                         {/* Preview del archivo */}
                         {!isFailedImage ? (
                           <div className="px-3 pb-3">
-                            <img 
-                              src={mediaUrl} 
+                            <img
+                              src={mediaUrl}
                               alt={fileName}
                               className="w-full max-h-48 object-contain rounded border cursor-pointer hover:opacity-90 transition-opacity"
                               onClick={() => window.open(mediaUrl, '_blank')}
@@ -466,7 +519,7 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                           </div>
                         ) : (
                           <div className="px-3 pb-3">
-                            <div 
+                            <div
                               className="w-full h-20 bg-gray-100 rounded border border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:bg-gray-200 transition-colors"
                               onClick={() => window.open(mediaUrl, '_blank')}
                             >
@@ -497,11 +550,11 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                   {capitalizeText(localTicket.estado)}
                 </Badge>
               </div>
-              
+
               <div className="flex items-center gap-4">
                 <Label htmlFor="status">Cambiar estado:</Label>
-                <Select 
-                  value={selectedStatus || undefined} 
+                <Select
+                  value={selectedStatus || undefined}
                   onValueChange={(value: Database["public"]["Enums"]["ticket_estado"]) => setSelectedStatus(value)}
                 >
                   <SelectTrigger className="w-[200px]">
@@ -513,10 +566,10 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                     <SelectItem value="cerrado">Cerrado</SelectItem>
                   </SelectContent>
                 </Select>
-                
+
                 {selectedStatus !== localTicket.estado && (
-                  <Button 
-                    onClick={handleStatusUpdate} 
+                  <Button
+                    onClick={handleStatusUpdate}
                     disabled={isUpdatingStatus}
                     size="sm"
                   >
@@ -531,9 +584,9 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-lg">Acciones Correctivas ({Array.isArray(localTicket.acciones_correctivas) ? localTicket.acciones_correctivas.length : 0})</CardTitle>
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setShowAddAction(!showAddAction)}
                 className="flex items-center gap-2"
               >
@@ -554,7 +607,7 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                     className="mt-2"
                     rows={3}
                   />
-                  
+
                   {/* Sección de imagen */}
                   <div className="mt-4">
                     <div className="flex items-center justify-between mb-2">
@@ -572,7 +625,7 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                         </Button>
                       )}
                     </div>
-                    
+
                     {/* UploadButton */}
                     {showImageUpload && !uploadedImageUrl && (
                       <div className="border-dashed border-2 border-gray-300 rounded-lg p-4 text-center">
@@ -624,7 +677,7 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                         </Button>
                       </div>
                     )}
-                    
+
                     {/* Imagen previa */}
                     {uploadedImageUrl && (
                       <div className="border rounded-lg p-3 bg-green-50">
@@ -643,26 +696,26 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                             <X className="h-4 w-4" />
                           </Button>
                         </div>
-                        <img 
-                          src={uploadedImageUrl} 
-                          alt="Imagen de acción correctiva" 
-                          className="max-h-24 rounded border cursor-pointer hover:opacity-80" 
+                        <img
+                          src={uploadedImageUrl}
+                          alt="Imagen de acción correctiva"
+                          className="max-h-24 rounded border cursor-pointer hover:opacity-80"
                           onClick={() => window.open(uploadedImageUrl, '_blank')}
                         />
                       </div>
                     )}
                   </div>
-                  
+
                   <div className="flex gap-2 mt-3">
-                    <Button 
-                      onClick={handleAddAction} 
+                    <Button
+                      onClick={handleAddAction}
                       disabled={isSubmittingAction || !newActionDescription.trim()}
                       size="sm"
                     >
                       {isSubmittingAction ? 'Guardando...' : 'Guardar'}
                     </Button>
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       onClick={() => {
                         setShowAddAction(false);
                         setNewActionDescription('');
@@ -684,9 +737,9 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                     <div key={idx} className="border rounded-lg p-3 bg-gray-50">
                       <div className="flex justify-between items-start mb-2">
                         <span className="text-xs text-gray-500">
-                          {accion.fecha ? new Date(accion.fecha).toLocaleString("es-ES", { 
-                            dateStyle: "medium", 
-                            timeStyle: "short" 
+                          {accion.fecha ? new Date(accion.fecha).toLocaleString("es-ES", {
+                            dateStyle: "medium",
+                            timeStyle: "short"
                           }) : "Sin fecha"}
                         </span>
                       </div>
@@ -694,10 +747,10 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                       {accion.imagen_url && (
                         <div className="mt-2">
                           <a href={accion.imagen_url} target="_blank" rel="noopener noreferrer">
-                            <img 
-                              src={accion.imagen_url} 
-                              alt="Acción" 
-                              className="max-h-20 rounded border cursor-pointer hover:opacity-80" 
+                            <img
+                              src={accion.imagen_url}
+                              alt="Acción"
+                              className="max-h-20 rounded border cursor-pointer hover:opacity-80"
                             />
                           </a>
                         </div>
@@ -707,7 +760,7 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                 </div>
               ) : (
                 <div className="text-center py-6 text-gray-500">
-                  <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <MessageSquare className="h-6 w-6 mx-auto mb-2 opacity-50" />
                   <p>No hay acciones correctivas registradas aún.</p>
                 </div>
               )}
