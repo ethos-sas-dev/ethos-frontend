@@ -83,6 +83,7 @@ export async function POST(
         );
       }
       try {
+        const normalizedPhoneNumber = currentTicket.numero_contacto_ticket.replace(/\\s/g, '');
         const recadoResponse = await fetch('https://api.recado.co/ethos-ticket-closed', {
           method: 'POST',
           headers: {
@@ -90,7 +91,7 @@ export async function POST(
             'x-ethos-api-key': recadoApiKey,
           },
           body: JSON.stringify({
-            numero_contacto_ticket: currentTicket.numero_contacto_ticket,
+            numero_contacto_ticket: normalizedPhoneNumber,
             ticket_id: ticketId,
             resolution_reason: resolution_reason,
           }),
