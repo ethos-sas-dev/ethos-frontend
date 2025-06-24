@@ -67,6 +67,7 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
   const [localTicket, setLocalTicket] = useState<Ticket>(ticket);
 
   const [selectedStatus, setSelectedStatus] = useState<Database["public"]["Enums"]["ticket_estado"] | null>(localTicket.estado || null);
+  const [resolutionReason, setResolutionReason] = useState('');
   const [newActionDescription, setNewActionDescription] = useState('');
   const [showAddAction, setShowAddAction] = useState(false);
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
@@ -99,6 +100,7 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
       setIsUploadingImage(false);
       setShowImageUpload(false);
       setFailedImages(new Set());
+      setResolutionReason('');
     }
   }, [isOpen, localTicket]);
 
@@ -149,6 +151,11 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
   const handleStatusUpdate = async () => {
     if (selectedStatus === localTicket.estado || !selectedStatus) return;
 
+    if (selectedStatus === 'cerrado' && !resolutionReason.trim()) {
+      alert('Por favor, ingrese un motivo de cierre para notificar al cliente.');
+      return;
+    }
+
     const originalStatus = localTicket.estado;
     const originalTicket = { ...localTicket }; // Copia superficial para revertir
 
@@ -162,10 +169,21 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
 
     setIsUpdatingStatus(true);
     try {
+      const body: { 
+        estado: Database["public"]["Enums"]["ticket_estado"]; 
+        resolution_reason?: string 
+      } = {
+        estado: selectedStatus,
+      };
+
+      if (selectedStatus === 'cerrado') {
+        body.resolution_reason = resolutionReason;
+      }
+
       const response = await fetch(`/api/tickets/${localTicket.id}/update-status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ estado: selectedStatus }),
+        body: JSON.stringify(body),
       });
 
       const updatedTicketData = await response.json();
@@ -177,6 +195,7 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
       // Actualizar con los datos confirmados de la API
       setLocalTicket(updatedTicketData);
       onTicketUpdated(updatedTicketData as Ticket);
+      setResolutionReason(''); // Limpiar el motivo de resolución
 
       console.log("Estado actualizado para ticket (confirmado por API):", localTicket.id);
 
@@ -249,6 +268,12 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
   };
 
   // Función para parsear el número de teléfono y generar la URL de Recado
+  // Función para truncar nombres de archivos largos
+  const truncateFileName = (fileName: string, maxLength: number = 50) => {
+    if (fileName.length <= maxLength) return fileName;
+    return fileName.substring(0, maxLength) + '...';
+  };
+
   const getRecadoUrl = (phoneNumber: string | null) => {
     if (!phoneNumber) return null;
 
@@ -488,7 +513,7 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                             <Paperclip className="h-4 w-4 text-gray-500" />
                             <div>
                               <p className="text-sm font-medium text-gray-900">
-                                {fileName}
+                                {truncateFileName(fileName)}
                               </p>
                               <p className="text-xs text-gray-500">
                                 {isFailedImage ? 'Archivo adjunto' : 'Imagen adjunta'}
@@ -556,12 +581,18 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                 <Select
                   value={selectedStatus || undefined}
                   onValueChange={(value: Database["public"]["Enums"]["ticket_estado"]) => setSelectedStatus(value)}
+                  disabled={localTicket.estado === 'cerrado'}
                 >
                   <SelectTrigger className="w-[200px]">
                     <SelectValue placeholder="Seleccionar estado" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="abierto">Abierto</SelectItem>
+                    <SelectItem 
+                      value="abierto" 
+                      disabled={localTicket.estado === 'en_progreso'}
+                    >
+                      Abierto
+                    </SelectItem>
                     <SelectItem value="en_progreso">En Progreso</SelectItem>
                     <SelectItem value="cerrado">Cerrado</SelectItem>
                   </SelectContent>
@@ -570,13 +601,46 @@ export function TicketDetailsModal({ isOpen, onClose, ticket, onTicketUpdated, g
                 {selectedStatus !== localTicket.estado && (
                   <Button
                     onClick={handleStatusUpdate}
-                    disabled={isUpdatingStatus}
+                    disabled={isUpdatingStatus || (selectedStatus === 'cerrado' && !resolutionReason.trim())}
                     size="sm"
                   >
-                    {isUpdatingStatus ? 'Actualizando...' : 'Actualizar'}
+                    {isUpdatingStatus ? 'Actualizando...' : 'Actualizar Estado'}
                   </Button>
                 )}
               </div>
+
+              {/* Muestra el campo para INGRESAR el motivo si se va a cerrar */}
+              {selectedStatus === 'cerrado' && localTicket.estado !== 'cerrado' && (
+                <div>
+                  <Label htmlFor="resolution-reason" className="font-medium">
+                    Motivo de Cierre (se notificará al cliente)
+                  </Label>
+                  <Textarea
+                    id="resolution-reason"
+                    value={resolutionReason}
+                    onChange={(e) => setResolutionReason(e.target.value)}
+                    placeholder="Ej: El trabajo ha sido completado y el problema está resuelto."
+                    className="mt-2"
+                    rows={3}
+                  />
+                </div>
+              )}
+
+              {/* Muestra el motivo YA GUARDADO si el ticket está cerrado y tiene un motivo */}
+              {localTicket.estado === 'cerrado' && localTicket.motivo_resolucion && (
+                <div>
+                  <Label htmlFor="resolution-reason-display" className="font-medium">
+                    Motivo de Cierre
+                  </Label>
+                  <Textarea
+                    id="resolution-reason-display"
+                    value={localTicket.motivo_resolucion}
+                    className="mt-2"
+                    rows={3}
+                    disabled
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
 

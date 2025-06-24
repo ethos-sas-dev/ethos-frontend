@@ -8,8 +8,17 @@ export async function POST(
   { params }: { params: Promise<{ ticketId: string }> }
 ) {
   try {
-    const { estado } = await request.json();
+    const { estado, resolution_reason } = await request.json();
     const { ticketId: ticketIdStr } = await params;
+
+    const recadoApiKey = process.env.RECADO_API_KEY;
+    if (!recadoApiKey) {
+      console.error('Error: La variable de entorno RECADO_API_KEY no está configurada.');
+      return NextResponse.json(
+        { error: 'Error de configuración del servidor.' },
+        { status: 500 }
+      );
+    }
 
     const ticketId = parseInt(ticketIdStr);
 
@@ -20,7 +29,7 @@ export async function POST(
       );
     }
 
-    if (!estado || !['abierto', 'en_progreso', 'resuelto', 'cerrado'].includes(estado)) {
+    if (!estado || !['abierto', 'en_progreso', 'cerrado'].includes(estado)) {
       return NextResponse.json(
         { error: 'Estado inválido' },
         { status: 400 }
@@ -66,12 +75,56 @@ export async function POST(
       );
     }
 
+    if (estado === 'cerrado' && currentTicket.numero_contacto_ticket) {
+      if (!resolution_reason) {
+        return NextResponse.json(
+          { error: 'El motivo de cierre es requerido para notificar al cliente.' },
+          { status: 400 }
+        );
+      }
+      try {
+        const recadoResponse = await fetch('https://api.recado.co/ethos-ticket-closed', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-ethos-api-key': recadoApiKey,
+          },
+          body: JSON.stringify({
+            numero_contacto_ticket: currentTicket.numero_contacto_ticket,
+            ticket_id: ticketId,
+            resolution_reason: resolution_reason,
+          }),
+        });
+        if (!recadoResponse.ok) {
+          const errorBody = await recadoResponse.text();
+          console.error(`Error al notificar a Recado para ticket ${ticketId}: ${recadoResponse.status} ${recadoResponse.statusText}`, errorBody);
+        } else {
+          const responseData = await recadoResponse.json();
+          console.log(`Notificación de cierre enviada a Recado para ticket ${ticketId}:`, responseData);
+        }
+      } catch (recadoError) {
+        console.error(`Excepción al llamar a la API de Recado para ticket ${ticketId}:`, recadoError);
+      }
+    }
+
+    const updatePayload: { 
+      estado: Database["public"]["Enums"]["ticket_estado"]; 
+      motivo_resolucion?: string | null;
+    } = {
+      estado: estado as Database["public"]["Enums"]["ticket_estado"]
+    };
+
+    if (estado === 'cerrado' && resolution_reason) {
+      updatePayload.motivo_resolucion = resolution_reason;
+    } else if (estado === 'cerrado') {
+      // Opcional: asegúrate de que si no hay razón, no quede una antigua.
+      updatePayload.motivo_resolucion = null;
+    }
+
     // Actualizar el estado del ticket
     const { data: updatedTicket, error: updateError } = await supabase
       .from('tickets')
-      .update({ 
-        estado: estado as Database["public"]["Enums"]["ticket_estado"]
-      })
+      .update(updatePayload)
       .eq('id', ticketId)
       .select('*')
       .single();

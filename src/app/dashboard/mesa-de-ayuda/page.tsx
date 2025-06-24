@@ -343,6 +343,7 @@ export default function MesaDeAyuda() {
             acciones_correctivas,
             numero_contacto_ticket,
             media_links,
+            motivo_resolucion,
             categoria_info:categoria (
               id,
               categoria,
@@ -523,8 +524,16 @@ export default function MesaDeAyuda() {
     
     // Si está por vencer
     if (diasRestantes <= 1) {
+       // Si queda menos de un día
+      if (diasRestantes < 1) {
+        return {
+          texto: `Urgente (<1d)`,
+          variant: "bg-orange-100 text-orange-800 hover:bg-orange-100"
+        };
+      }
+      // Si queda exactamente un día
       return {
-        texto: `Urgente (${diasRestantes}d)`,
+        texto: `Urgente (1d)`,
         variant: "bg-orange-100 text-orange-800 hover:bg-orange-100"
       };
     } else if (diasRestantes <= 2) {

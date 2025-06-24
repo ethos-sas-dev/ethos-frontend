@@ -1037,6 +1037,7 @@ export type Database = {
           estado: Database["public"]["Enums"]["ticket_estado"] | null
           id: number
           media_links: Json | null
+          motivo_resolucion: string | null
           numero_contacto_ticket: string | null
           perfil_cliente_id: number | null
           propiedad_id: number | null
@@ -1051,6 +1052,7 @@ export type Database = {
           estado?: Database["public"]["Enums"]["ticket_estado"] | null
           id?: number
           media_links?: Json | null
+          motivo_resolucion?: string | null
           numero_contacto_ticket?: string | null
           perfil_cliente_id?: number | null
           propiedad_id?: number | null
@@ -1065,6 +1067,7 @@ export type Database = {
           estado?: Database["public"]["Enums"]["ticket_estado"] | null
           id?: number
           media_links?: Json | null
+          motivo_resolucion?: string | null
           numero_contacto_ticket?: string | null
           perfil_cliente_id?: number | null
           propiedad_id?: number | null

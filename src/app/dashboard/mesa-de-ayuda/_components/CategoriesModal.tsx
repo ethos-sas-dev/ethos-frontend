@@ -6,8 +6,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
-  DialogClose,
   DialogDescription,
 } from '@/app/_components/ui/dialog';
 import { Button } from '@/app/_components/ui/button';
@@ -24,7 +22,7 @@ import { Input } from '@/app/_components/ui/input';
 import { Label } from '@/app/_components/ui/label';
 import { Textarea } from '@/app/_components/ui/textarea';
 import { Badge } from '@/app/_components/ui/badge';
-import { PlusCircle, Edit, Loader2, Save, X, ArrowLeft } from 'lucide-react';
+import { PlusCircle, Edit, Loader2, Save, ArrowLeft } from 'lucide-react';
 import { createClient } from '../../../../../lib/supabase/client';
 import { Database } from '../../../../../supabase-ethos-types';
 import {
