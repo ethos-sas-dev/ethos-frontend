@@ -912,6 +912,44 @@ export function ClientForm({
                     </div>
                 </div>
 
+                {/* Contacto Accesos */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t pt-4">
+                    <div>
+                        <Label htmlFor="contacto_accesos.nombre">Nombre Accesos</Label>
+                        <Input
+                            id="contacto_accesos.nombre"
+                            name="contacto_accesos.nombre"
+                            value={formData.contacto_accesos?.nombre ?? ''}
+                            onChange={handleInputChange}
+                            className="mt-1"
+                            placeholder="María Rodríguez"
+                        />
+                    </div>
+                     <div>
+                        <Label htmlFor="contacto_accesos.email">Email Accesos</Label>
+                        <Input
+                            id="contacto_accesos.email"
+                            name="contacto_accesos.email"
+                            type="email"
+                            value={formData.contacto_accesos?.email ?? ''}
+                            onChange={handleInputChange}
+                            className="mt-1"
+                            placeholder="accesos@ejemplo.com"
+                        />
+                    </div>
+                    <div>
+                        <Label htmlFor="contacto_accesos.telefono">Teléfono Accesos</Label>
+                        <Input
+                            id="contacto_accesos.telefono"
+                            name="contacto_accesos.telefono"
+                            value={formData.contacto_accesos?.telefono ?? ''}
+                            onChange={handleInputChange}
+                            className="mt-1"
+                            placeholder="0965432109"
+                        />
+                    </div>
+                </div>
+
              </fieldset>
 
 
