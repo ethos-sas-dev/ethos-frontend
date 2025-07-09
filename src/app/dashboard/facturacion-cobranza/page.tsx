@@ -48,6 +48,7 @@ import {
   DialogFooter
 } from "@/app/_components/ui/dialog";
 import { CheckCircleIcon as CheckCircleSolidIcon } from "@heroicons/react/24/solid";
+import { TrashIcon } from "@heroicons/react/24/outline";
 
 // Tipos
 type Proyecto = {
@@ -178,6 +179,10 @@ export default function FacturacionPage() {
   // Estados para modal de confirmación
   const [isConfirmApprovalOpen, setIsConfirmApprovalOpen] = useState<boolean>(false);
   const [isApprovingFacturas, setIsApprovingFacturas] = useState<boolean>(false);
+  
+  // Estados para eliminación de facturas
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState<boolean>(false);
+  const [isDeletingFacturas, setIsDeletingFacturas] = useState<boolean>(false);
   
   // Dentro del componente FacturacionPage, añadir estos estados:
   const [isBatchProcessing, setIsBatchProcessing] = useState<boolean>(false);
@@ -613,6 +618,49 @@ export default function FacturacionPage() {
     await fetchFacturasBorrador();
     setSelectedFacturas([]);
     // setBatchProgress(null); // Se maneja arriba para limpiar mensaje
+  };
+  
+  // Función para eliminar facturas seleccionadas
+  const procesarEliminacionFacturas = async () => {
+    setIsConfirmDeleteOpen(false);
+    setIsDeletingFacturas(true);
+    
+    try {
+      const response = await fetch('/api/facturacion/eliminar-facturas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ facturaIds: selectedFacturas }),
+      });
+      
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.message || 'Error al eliminar facturas');
+      }
+      
+      // Mostrar mensaje de éxito
+      setStatusModal({
+        open: true,
+        title: "Eliminación Exitosa",
+        message: `Se eliminaron ${result.eliminadas} facturas borrador correctamente.`,
+        type: "success",
+      });
+      
+      // Actualizar la lista de facturas y limpiar selección
+      await fetchFacturasBorrador();
+      setSelectedFacturas([]);
+      
+    } catch (error: any) {
+      console.error("Error al eliminar facturas:", error);
+      setStatusModal({
+        open: true,
+        title: "Error en Eliminación",
+        message: error.message || "Ocurrió un error al eliminar las facturas.",
+        type: "error",
+      });
+    } finally {
+      setIsDeletingFacturas(false);
+    }
   };
   
   // Manejo de selección/deselección de facturas
@@ -1315,7 +1363,7 @@ export default function FacturacionPage() {
               variant="outline"
               size="sm"
               onClick={fetchFacturasBorrador}
-              disabled={isLoading || isBatchProcessing}
+              disabled={isLoading || isBatchProcessing || isDeletingFacturas}
             >
               <ArrowPathIcon className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
               Actualizar
@@ -1325,7 +1373,7 @@ export default function FacturacionPage() {
               variant="outline"
               size="sm"
               onClick={exportarAExcel}
-              disabled={isLoading || facturas.length === 0 || isBatchProcessing}
+              disabled={isLoading || facturas.length === 0 || isBatchProcessing || isDeletingFacturas}
             >
               <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
               Exportar a Excel
@@ -1339,6 +1387,17 @@ export default function FacturacionPage() {
             >
               <CheckCircleIcon className="w-4 h-4 mr-2" />
               Aprobar Seleccionadas ({selectedFacturas.length})
+            </Button>
+            
+            <Button
+              size="sm"
+              variant="destructive"
+              className="text-white"
+              disabled={selectedFacturas.length === 0 || isBatchProcessing || isDeletingFacturas}
+              onClick={() => setIsConfirmDeleteOpen(true)}
+            >
+              <TrashIcon className="w-4 h-4 mr-2" />
+              Eliminar Seleccionadas ({selectedFacturas.length})
             </Button>
           </div>
         </CardHeader>
@@ -1686,8 +1745,8 @@ export default function FacturacionPage() {
                                                                   );
                                                                 }
                                                               }}
-                                                              disabled={isBatchProcessing}
-                                                              className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-50"
+                                                                                                            disabled={isBatchProcessing || isDeletingFacturas}
+                                              className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-50"
                                                             />
                                                           </div>
                                                         </TableHead>
@@ -1712,9 +1771,9 @@ export default function FacturacionPage() {
                                                               <input
                                                                 type="checkbox"
                                                                 checked={selectedFacturas.includes(factura.id)}
-                                                                onChange={() => toggleFacturaSelection(factura.id)}
-                                                                disabled={isBatchProcessing}
-                                                                className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-50"
+                                                                                                              onChange={() => toggleFacturaSelection(factura.id)}
+                                                disabled={isBatchProcessing || isDeletingFacturas}
+                                                className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-50"
                                                               />
                                                             </TableCell>
                                                             <TableCell>{identificadorPropiedad}</TableCell>
@@ -1831,6 +1890,55 @@ export default function FacturacionPage() {
         isLoading={isApprovingFacturas || isBatchProcessing}
         facturaCount={selectedFacturas.length}
       />
+      
+      {/* Modal de confirmación de eliminación */}
+      <Dialog open={isConfirmDeleteOpen} onOpenChange={setIsConfirmDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar Eliminación</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-gray-600">
+              ¿Está seguro que desea eliminar las <strong>{selectedFacturas.length}</strong> facturas seleccionadas?
+            </p>
+            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
+              <p className="text-sm text-red-700">
+                <strong>Advertencia:</strong> Esta acción no se puede deshacer. Las facturas eliminadas no podrán ser recuperadas.
+              </p>
+            </div>
+            <div className="mt-3 text-sm text-gray-600">
+              Total seleccionado: <strong>{formatCurrency(totalesSeleccionados.total)}</strong>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsConfirmDeleteOpen(false)}
+              disabled={isDeletingFacturas}
+            >
+              Cancelar
+            </Button>
+            <Button
+              className="text-white"
+              variant="destructive"
+              onClick={procesarEliminacionFacturas}
+              disabled={isDeletingFacturas}
+            >
+              {isDeletingFacturas ? (
+                <>
+                  <ArrowPathIcon className="w-4 h-4 mr-2 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                <>
+                  <TrashIcon className="w-4 h-4 mr-2" />
+                  Eliminar Facturas
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       
       {/* Modal para seleccionar propiedades */}
       <Dialog open={showPropiedadesModal} onOpenChange={setShowPropiedadesModal}>

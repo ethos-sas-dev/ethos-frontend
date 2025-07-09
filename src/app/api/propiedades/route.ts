@@ -10,6 +10,17 @@ const supabaseAdmin = supabaseAdminUrl && supabaseServiceKey
     ? createAdminClient(supabaseAdminUrl, supabaseServiceKey, { auth: { persistSession: false } })
     : null;
 
+// Tipos para los archivos pendientes
+type PendingUpload = {
+    name: string;
+    url: string;
+    key: string;
+};
+
+type PendingUploadsState = {
+    [key: string]: PendingUpload | null;
+};
+
 // --- Handler POST para crear propiedad ---
 export async function POST(request: Request) {
     // 1. Verificar si el cliente Admin está configurado
@@ -53,10 +64,20 @@ export async function POST(request: Request) {
     console.log("API /propiedades: Authorized user.", { userId: user.id, role: userRole });
 
     // 3. Parsear y Validar el Cuerpo de la Solicitud
+    let requestData;
     let propertyData;
     try {
-        propertyData = await request.json();
-        console.log("API /propiedades: Received payload:", propertyData);
+        requestData = await request.json();
+        console.log("API /propiedades: Received payload:", requestData);
+
+        // Extraer propertyData del payload
+        if (requestData.propertyData) {
+            // Caso cuando viene desde la página de creación
+            propertyData = requestData.propertyData;
+        } else {
+            // Caso cuando viene directamente (para compatibilidad)
+            propertyData = requestData;
+        }
 
         // Validación básica (añadir más según sea necesario)
         if (!propertyData || typeof propertyData !== 'object') {
@@ -75,7 +96,55 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: `Error en los datos recibidos: ${parseError.message}` }, { status: 400 }); // Bad Request
     }
 
-    // 4. Insertar la Nueva Propiedad usando el Cliente Admin
+    // 4. Procesar archivos pendientes de subida (si los hay)
+    const pendingUploads: PendingUploadsState = requestData.pendingUploads || {};
+    let escritura_pdf_id = propertyData.escritura_pdf_id;
+    let acta_entrega_pdf_id = propertyData.acta_entrega_pdf_id;
+    let contrato_arrendamiento_pdf_id = propertyData.contrato_arrendamiento_pdf_id;
+
+    // Registrar archivos pendientes en la tabla 'archivos'
+    for (const [docType, uploadInfo] of Object.entries(pendingUploads)) {
+        if (uploadInfo && typeof uploadInfo === 'object' && 'name' in uploadInfo && 'url' in uploadInfo && 'key' in uploadInfo) {
+            try {
+                const { data: archivo, error: archivoError } = await supabaseAdmin
+                    .from('archivos')
+                    .insert({
+                        filename: uploadInfo.name,
+                        external_url: uploadInfo.url,
+                        external_storage_key: uploadInfo.key,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    })
+                    .select('id')
+                    .single();
+
+                if (archivoError) {
+                    console.error(`Error al guardar archivo ${docType}:`, archivoError);
+                    continue; // Continuar con otros archivos
+                }
+
+                // Asignar el ID del archivo creado según el tipo
+                switch (docType) {
+                    case 'escritura_pdf_id':
+                        escritura_pdf_id = archivo.id;
+                        break;
+                    case 'acta_entrega_pdf_id':
+                        acta_entrega_pdf_id = archivo.id;
+                        break;
+                    case 'contrato_arrendamiento_pdf_id':
+                        contrato_arrendamiento_pdf_id = archivo.id;
+                        break;
+                }
+
+                console.log(`Archivo ${docType} guardado con ID: ${archivo.id}`);
+            } catch (fileError) {
+                console.error(`Error procesando archivo ${docType}:`, fileError);
+                // Continuar con la creación de la propiedad aunque falle un archivo
+            }
+        }
+    }
+
+    // 5. Insertar la Nueva Propiedad usando el Cliente Admin
     try {
         const { data: newProperty, error: insertError } = await supabaseAdmin
             .from('propiedades')
@@ -90,9 +159,13 @@ export async function POST(request: Request) {
                 estado_de_construccion: propertyData.estado_de_construccion,
                 area_total: propertyData.area_total,
                 areas_desglosadas: propertyData.areas_desglosadas,
-                pagos: propertyData.pagos,
+                encargado_pago: propertyData.encargado_pago,
                 monto_fondo_inicial: propertyData.monto_fondo_inicial,
                 monto_alicuota_ordinaria: propertyData.monto_alicuota_ordinaria,
+                // IDs de archivos (procesados arriba)
+                escritura_pdf_id: escritura_pdf_id,
+                acta_entrega_pdf_id: acta_entrega_pdf_id,
+                contrato_arrendamiento_pdf_id: contrato_arrendamiento_pdf_id,
                 // Otros campos que puedan venir o tener defaults en DB:
                 // modo_incognito: true, // Ejemplo default
                 // created_at, updated_at serán manejados por la DB

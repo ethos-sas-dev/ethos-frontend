@@ -42,7 +42,7 @@ export default function FacturacionCobranzaLayout({
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="mb-4">
           <TabsTrigger value="facturacion">Facturación</TabsTrigger>
-          <TabsTrigger value="cobranza">Cobranza</TabsTrigger>
+          {/* <TabsTrigger value="cobranza">Cobranza</TabsTrigger> */}
         </TabsList>
       </Tabs>
       

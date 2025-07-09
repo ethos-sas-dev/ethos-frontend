@@ -123,7 +123,7 @@ function obtenerDatosClienteParaContifico(cliente: PerfilCliente, propiedad: Pro
 /**
  * Prepara el array de detalles para Contífico a partir de items_factura.
  */
-function prepararDetallesContifico(items: ItemFactura[], servicioContificoId?: string): any[] | null {
+function prepararDetallesContifico(items: ItemFactura[], factura: FacturaCompleta, servicioContificoId?: string): any[] | null {
   if (!items || items.length === 0) return null;
   
   // Por ahora, asumimos que el primer item contiene el servicio principal
@@ -136,25 +136,26 @@ function prepararDetallesContifico(items: ItemFactura[], servicioContificoId?: s
     // return null; // Fallar si no hay ID de contifico
   }
   
-  // Adaptar cálculo de bases según el IVA del item
-  const porcentajeIvaContifico = itemPrincipal.porcentajeIva > 0 ? 15 : 0; // Mapeo a Contifico (0 o 15%)
+  // USAR LOS VALORES EXACTOS DE LA FACTURA - NO RECALCULAR
+  // Convertir el porcentaje de IVA de decimal a porcentaje para Contifico
+  const porcentajeIvaContifico = itemPrincipal.porcentajeIva > 0 ? Math.round(itemPrincipal.porcentajeIva * 100) : 0;
+  
+  // Usar directamente los valores precalculados de la factura para evitar discrepancias de redondeo
   let base_cero = 0;
   let base_gravable = 0;
-  const precioUnitario = parseFloat(itemPrincipal.precioUnitario.toFixed(6)); // Asegurar precisión
-  const cantidad = itemPrincipal.cantidad;
   
-  // Asumimos que el precioUnitario ya es la base imponible total para esa línea
-  const baseImponibleLinea = parseFloat((precioUnitario * cantidad).toFixed(2)); 
-  
-  if (porcentajeIvaContifico === 15) {
-    base_gravable = baseImponibleLinea;
+  if (porcentajeIvaContifico > 0) {
+    base_gravable = parseFloat(factura.subtotal.toFixed(2));
   } else {
-    base_cero = baseImponibleLinea;
+    base_cero = parseFloat(factura.subtotal.toFixed(2));
   }
+
+  // Precio unitario debe ser consistente con el subtotal de la factura
+  const precioUnitario = parseFloat((factura.subtotal / itemPrincipal.cantidad).toFixed(6));
 
   return [{
     producto_id: idProductoContifico || 'ID_PRODUCTO_PENDIENTE', // Usar ID real o placeholder
-    cantidad: cantidad, 
+    cantidad: itemPrincipal.cantidad, 
     precio: precioUnitario, 
     porcentaje_iva: porcentajeIvaContifico,
     porcentaje_descuento: 0.00,
@@ -186,7 +187,7 @@ const prepararYEnviarAContifico = async (
     return { success: false, error: "Faltan datos del cliente para Contifico." };
   }
   
-  const detallesContifico = prepararDetallesContifico(factura.items_factura, factura.servicio?.id_contifico);
+  const detallesContifico = prepararDetallesContifico(factura.items_factura, factura, factura.servicio?.id_contifico);
   if (!detallesContifico) {
     return { success: false, error: "No se pudieron preparar los detalles de la factura." };
   }
