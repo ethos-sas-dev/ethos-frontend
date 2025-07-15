@@ -86,6 +86,9 @@ export type PropertyFormData = { // Exportar para que la página la use
     monto_fondo_inicial: number | null; // Mantenido aquí, calculado antes de submit
     monto_alicuota_ordinaria: number | null; // Mantenido aquí, calculado antes de submit
     
+    // Campo para imagen de la propiedad
+    imagen?: string | null;
+    
     // IDs para documentos (en modo editar pueden estar ya presentes)
     escritura_pdf_id?: number | null;
     acta_entrega_pdf_id?: number | null;
@@ -132,6 +135,9 @@ const defaultInitialData: PropertyFormData = {
     encargado_pago: 'Propietario',
     monto_fondo_inicial: null,
     monto_alicuota_ordinaria: null,
+    
+    // Imagen de la propiedad
+    imagen: null,
     
     // IDs para documentos
     escritura_pdf_id: null,
@@ -194,6 +200,9 @@ export function PropertyForm({
             encargado_pago: initialData?.encargado_pago || 'Propietario',
             monto_fondo_inicial: initialData?.monto_fondo_inicial ?? null, // Usar ??
             monto_alicuota_ordinaria: initialData?.monto_alicuota_ordinaria ?? null, // Usar ??
+            
+            // Imagen de la propiedad
+            imagen: initialData?.imagen ?? null,
             
             // IDs para documentos
             escritura_pdf_id: initialData?.escritura_pdf_id ?? null,
@@ -485,6 +494,111 @@ export function PropertyForm({
         );
     };
 
+    // --- Helper para renderizar estado de subida de imagen ---
+    const renderImageUploadStatus = () => {
+        const pending = pendingUploads['imagen'];
+        const existingImage = formData.imagen;
+        const uploadingNow = isUploading['imagen'] ?? false;
+        const showUploadButton = !pending && !(mode === 'edit' && existingImage) && !uploadingNow;
+
+        return (
+            <div className="space-y-1">
+                <Label>Imagen de la Propiedad</Label>
+                <div className="flex items-center gap-2 mt-1 min-h-[36px]">
+                    {/* Mostrar Spinner si se está subiendo */}
+                    {uploadingNow && (
+                        <div className="flex items-center justify-center p-2 flex-grow text-sm text-gray-500">
+                            <MiniSpinner />
+                            <span className="ml-2">Subiendo...</span>
+                        </div>
+                    )}
+
+                    {/* Mostrar subida pendiente */}
+                    {pending && !uploadingNow && (
+                        <div className="flex items-center gap-1 text-sm text-green-700 p-2 bg-green-50 rounded border border-green-200 flex-grow">
+                            <div className="h-12 w-12 bg-green-100 rounded overflow-hidden mr-2 flex-shrink-0">
+                                {pending.url && (
+                                    <img 
+                                        src={pending.url} 
+                                        alt="Vista previa"
+                                        className="h-full w-full object-cover"
+                                    />
+                                )}
+                            </div>
+                            <span className="truncate" title={pending.name}>{pending.name}</span>
+                            <button
+                                type="button"
+                                onClick={() => handleCancelPendingUpload('imagen')}
+                                className="ml-auto text-xs text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-100"
+                                title="Cancelar subida pendiente"
+                            >
+                                &times;
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Mostrar imagen existente */}
+                    {mode === 'edit' && existingImage && !pending && !uploadingNow && (
+                        <div className="flex items-center gap-2 text-sm text-gray-700 p-2 bg-gray-50 rounded border border-gray-200 flex-grow">
+                            <div className="h-12 w-12 bg-gray-100 rounded overflow-hidden mr-2 flex-shrink-0">
+                                <img 
+                                    src={existingImage} 
+                                    alt="Imagen de la propiedad"
+                                    className="h-full w-full object-cover"
+                                />
+                            </div>
+                            <a
+                                href={existingImage}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="truncate hover:underline text-blue-600"
+                                title="Ver imagen de la propiedad"
+                            >
+                                Ver imagen de la propiedad
+                            </a>
+                            <button
+                                type="button"
+                                onClick={handleRemoveExistingImage}
+                                className="ml-auto p-1 text-gray-400 hover:text-red-600 hover:bg-red-100 rounded"
+                                title="Quitar imagen de la propiedad"
+                            >
+                                <TrashIcon className="h-4 w-4" />
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Mostrar botón de subida */}
+                    {showUploadButton && (
+                        <UploadButton<OurFileRouter, "propertyImage">
+                            endpoint="propertyImage"
+                            onUploadBegin={() => handleUploadBegin('imagen')}
+                            onClientUploadComplete={(res) => handleUploadComplete('imagen', res)}
+                            onUploadError={(error) => handleUploadError('imagen', error)}
+                            appearance={{
+                                button: `text-xs text-black font-medium px-3 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 flex items-center gap-1 ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`,
+                                allowedContent: "hidden",
+                                container: "w-auto", 
+                            }}
+                            content={{
+                                button() {
+                                    return (
+                                        <>
+                                            <ArrowUpCircleIcon className="w-4 h-4 text-black" />
+                                            <span className="text-black">Subir imagen de la propiedad</span>
+                                        </>
+                                    );
+                                },
+                            }}
+                        />
+                    )}
+                </div>
+                {uploadErrors['imagen'] && !uploadingNow && (
+                    <p className="text-xs text-red-600 mt-1">{uploadErrors['imagen']}</p>
+                )}
+            </div>
+        );
+    };
+
     // --- Submit Handler Interno ---
     const handleInternalSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -492,6 +606,12 @@ export function PropertyForm({
 
         // Recalculate montos just before submitting
         const { montoFondoInicial, montoAlicuotaOrdinaria } = calculateMontos();
+
+        // Determinar la imagen final (existente o pendiente)
+        let finalImagen = formData.imagen;
+        if (pendingUploads['imagen']) {
+            finalImagen = pendingUploads['imagen'].url;
+        }
 
         // Preparar payload final
         const finalPayload = {
@@ -526,6 +646,8 @@ export function PropertyForm({
             encargado_pago: formData.encargado_pago,
             monto_fondo_inicial: montoFondoInicial,
             monto_alicuota_ordinaria: montoAlicuotaOrdinaria,
+            // Imagen de la propiedad (existente o pendiente)
+            imagen: finalImagen,
             // Añadir IDs de documentos existentes (si los hay)
             escritura_pdf_id: formData.escritura_pdf_id,
             acta_entrega_pdf_id: formData.acta_entrega_pdf_id,
@@ -591,6 +713,15 @@ export function PropertyForm({
         // Limpiar estado de pendiente y error
         setPendingUploads(prev => ({ ...prev, [docTypeKey]: null }));
         setUploadErrors(prev => ({ ...prev, [docTypeKey]: '' }));
+    };
+
+    // --- Handler para eliminar imagen existente ---
+    const handleRemoveExistingImage = () => {
+        console.log("Eliminando imagen existente");
+        setFormData(prev => ({
+            ...prev,
+            imagen: null
+        }));
     };
 
     // --- JSX del Formulario (movido desde editar/page.tsx) ---
@@ -914,6 +1045,17 @@ export function PropertyForm({
                 </div>
                 <p className="text-xs text-gray-500 italic">
                     Estos montos se basan en el área total y las tasas base del proyecto. Se guardarán al {mode === 'create' ? 'crear' : 'actualizar'}.
+                </p>
+            </fieldset>
+
+            {/* Sección de Imagen de la Propiedad */}
+            <fieldset className="space-y-4 border p-4 rounded-md">
+                <legend className="text-sm font-medium px-1">Imagen de la Propiedad</legend>
+                <div className="grid grid-cols-1 gap-4">
+                    {renderImageUploadStatus()}
+                </div>
+                <p className="text-xs text-gray-500 italic mt-2">
+                    Esta imagen será utilizada para representar visualmente la propiedad en el sistema.
                 </p>
             </fieldset>
 

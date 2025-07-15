@@ -794,7 +794,7 @@ export default function PropertyDetailPage() {
         );
     }
 
-     const imageUrl = property.imagen || "/bodega.png"; // Use joined imagen data
+     const imageUrl = property.imagen || "/bodega.png"; // Use imagen URL directly
      const { status: occupancyStatus, name: occupantDisplayName, colorClasses: occupancyColor } = getEffectiveOccupancyStatus();
 
     // --- Helper function to render documents for a profile ---

@@ -103,6 +103,8 @@ export async function POST(request: Request) {
     let contrato_arrendamiento_pdf_id = propertyData.contrato_arrendamiento_pdf_id;
 
     // Registrar archivos pendientes en la tabla 'archivos'
+    let imagen_url = propertyData.imagen; // Usar la imagen existente si no hay una nueva
+    
     for (const [docType, uploadInfo] of Object.entries(pendingUploads)) {
         if (uploadInfo && typeof uploadInfo === 'object' && 'name' in uploadInfo && 'url' in uploadInfo && 'key' in uploadInfo) {
             try {
@@ -115,7 +117,7 @@ export async function POST(request: Request) {
                         created_at: new Date().toISOString(),
                         updated_at: new Date().toISOString()
                     })
-                    .select('id')
+                    .select('id, external_url')
                     .single();
 
                 if (archivoError) {
@@ -133,6 +135,9 @@ export async function POST(request: Request) {
                         break;
                     case 'contrato_arrendamiento_pdf_id':
                         contrato_arrendamiento_pdf_id = archivo.id;
+                        break;
+                    case 'imagen':
+                        imagen_url = archivo.external_url;
                         break;
                 }
 
@@ -162,6 +167,8 @@ export async function POST(request: Request) {
                 encargado_pago: propertyData.encargado_pago,
                 monto_fondo_inicial: propertyData.monto_fondo_inicial,
                 monto_alicuota_ordinaria: propertyData.monto_alicuota_ordinaria,
+                // Imagen procesada (URL directa)
+                imagen: imagen_url,
                 // IDs de archivos (procesados arriba)
                 escritura_pdf_id: escritura_pdf_id,
                 acta_entrega_pdf_id: acta_entrega_pdf_id,

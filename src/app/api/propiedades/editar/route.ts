@@ -114,8 +114,14 @@ export async function POST(request: Request) {
           console.log(`Archivo creado para ${docType}:`, newFile);
           
           // Actualizar la referencia en los datos de la propiedad
-          // Por ejemplo, si docType es 'escritura_pdf_id', actualizar ese campo
-          updateData[docType] = newFile.id;
+          // Para imagen, guardamos la URL directamente
+          // Para otros documentos, guardamos el ID del archivo
+          if (docType === 'imagen') {
+            updateData[docType] = newFile.external_url;
+          } else {
+            // Para documentos como escritura_pdf_id, acta_entrega_pdf_id, etc.
+            updateData[docType] = newFile.id;
+          }
         }
       }
     }

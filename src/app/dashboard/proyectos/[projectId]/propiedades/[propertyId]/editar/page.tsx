@@ -57,7 +57,7 @@ export default function EditPropertyPage() {
                     id, proyecto_id, codigo_catastral, estado_entrega, estado_uso,
                     area_total, identificadores, estado_de_construccion, actividad,
                     monto_fondo_inicial, monto_alicuota_ordinaria,
-                    areas_desglosadas, pagos, encargado_pago,
+                    areas_desglosadas, pagos, encargado_pago, imagen,
                     escritura_pdf_id, acta_entrega_pdf_id, contrato_arrendamiento_pdf_id
                 `)
                 .eq('id', propertyId)
