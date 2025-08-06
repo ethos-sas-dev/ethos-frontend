@@ -799,7 +799,13 @@ export default function FacturacionPage() {
       let servicioCodigo = 'N/A';
       
       if (factura.items_factura && factura.items_factura.length > 0) {
-        servicioNombre = factura.items_factura[0].descripcion || 'Sin servicio';
+        // Obtener la descripción completa
+        let descripcionCompleta = factura.items_factura[0].descripcion || 'Sin servicio';
+        
+        // Extraer el nombre base del servicio removiendo la parte del área
+        // Ejemplo: "Cuota de Mantenimiento Almax 2 (Área: 45.5 m²)" → "Cuota de Mantenimiento Almax 2"
+        servicioNombre = descripcionCompleta.replace(/\s*\(Área:.*?\)/, '');
+        
         servicioCodigo = factura.items_factura[0].codigoServicio || 'N/A';
       }
       
@@ -1249,11 +1255,11 @@ export default function FacturacionPage() {
                     <SelectValue placeholder="Seleccionar proyecto" />
                   </SelectTrigger>
                   <SelectContent>
-                    {/* {proyectos.map((proyecto) => ( */}
-                      <SelectItem key={proyectos[1].id} value={proyectos[1].id.toString()}>
-                        {proyectos[1].nombre}
+                    {proyectos.map((proyecto) => (
+                      <SelectItem key={proyecto.id} value={proyecto.id.toString()}>
+                        {proyecto.nombre}
                       </SelectItem>
-                    {/* ))} */}
+                    ))} 
                   </SelectContent>
                 </Select>
               </div>

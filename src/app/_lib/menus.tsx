@@ -69,7 +69,7 @@ export const menuItems: Record<UserRole, MenuItems['items']> = {
       href: "/dashboard/reportes"
     },
     {
-      title: "Facturación y Cobranza",
+      title: "Facturación",
       icon: CurrencyDollarIcon,
       href: "/dashboard/facturacion-cobranza"
     },
@@ -106,7 +106,7 @@ export const menuItems: Record<UserRole, MenuItems['items']> = {
       href: "/dashboard/reportes"
     },
     {
-      title: "Facturación y Cobranza",
+      title: "Facturación",
       icon: CurrencyDollarIcon,
       href: "/dashboard/facturacion-cobranza"
     },

@@ -124,27 +124,81 @@ export async function POST(request: Request) {
     const resultados = { generadas: 0, omitidas: 0, errores: 0, erroresDetalle: [] as string[] };
     const now = new Date().toISOString();
     
+    console.log(`API /api/facturacion/generar-facturas: Procesando ${propiedades.length} propiedades para servicio ${servicio.codigo} (${servicio.nombre})`);
+    
     for (const propiedad of propiedades || []) {
       try {
+        console.log(`API /api/facturacion/generar-facturas: Procesando propiedad ID ${propiedad.id}`);
+        
+        // Filtro por tipo de propiedad según el servicio
+        if (servicio.codigo === 'AOACL') {
+          // AOACL: Solo para propiedades tipo "local"
+          const tieneLocal = propiedad.identificadores && (
+            (propiedad.identificadores.inferior && propiedad.identificadores.inferior.toLowerCase().includes('local')) ||
+            (propiedad.identificadores.superior && propiedad.identificadores.superior.toLowerCase().includes('local')) ||
+            (propiedad.identificadores.intermedio && propiedad.identificadores.intermedio.toLowerCase().includes('local'))
+          );
+          if (!tieneLocal) {
+            console.log(`API /api/facturacion/generar-facturas: Omitiendo propiedad ID ${propiedad.id} - servicio AOACL requiere identificador "local" (identificadores: ${JSON.stringify(propiedad.identificadores)})`);
+            resultados.omitidas++;
+            continue;
+          }
+        } else if (servicio.codigo === 'AOACO') {
+          // AOACO: Solo para propiedades tipo "oficina"
+          const tieneOficina = propiedad.identificadores && (
+            (propiedad.identificadores.inferior && propiedad.identificadores.inferior.toLowerCase().includes('oficina')) ||
+            (propiedad.identificadores.superior && propiedad.identificadores.superior.toLowerCase().includes('oficina')) ||
+            (propiedad.identificadores.intermedio && propiedad.identificadores.intermedio.toLowerCase().includes('oficina'))
+          );
+          if (!tieneOficina) {
+            console.log(`API /api/facturacion/generar-facturas: Omitiendo propiedad ID ${propiedad.id} - servicio AOACO requiere identificador "oficina" (identificadores: ${JSON.stringify(propiedad.identificadores)})`);
+            resultados.omitidas++;
+            continue;
+          }
+        }
+        
         // Verificar si la propiedad está en uso
         // if (propiedad.estado_uso !== 'enUso') {
         //   resultados.omitidas++;
         //   continue;
         // }
         
-        // Determinar el cliente a facturar (encargado_pago)
+        // Determinar el cliente a facturar
         let clienteId: number | null = null;
         let clienteData = null;
         
-        if (propiedad.encargado_pago === 'Propietario' && propiedad.propietario) {
-          clienteId = propiedad.propietario_id as number;
-          clienteData = propiedad.propietario;
-        } else if (propiedad.encargado_pago === 'Arrendatario' && propiedad.ocupante && !propiedad.ocupante_externo) {
-          clienteId = propiedad.ocupante_id as number;
-          clienteData = propiedad.ocupante;
+        // Lógica especial: Si el servicio es APA2, siempre facturar al propietario
+        if (servicio.codigo === 'APA2') {
+          console.log(`API /api/facturacion/generar-facturas: Servicio APA2 detectado - forzando facturación al propietario`);
+          if (propiedad.propietario) {
+            clienteId = propiedad.propietario_id as number;
+            clienteData = propiedad.propietario;
+            console.log(`API /api/facturacion/generar-facturas: Propietario encontrado - ID: ${clienteId}`);
+          } else {
+            console.log(`API /api/facturacion/generar-facturas: PROBLEMA - Propiedad ID ${propiedad.id} no tiene propietario asignado`);
+          }
+        } else {
+          // Lógica normal: usar el encargado_pago configurado
+          console.log(`API /api/facturacion/generar-facturas: Usando encargado_pago: ${propiedad.encargado_pago}`);
+          if (propiedad.encargado_pago === 'Propietario' && propiedad.propietario) {
+            clienteId = propiedad.propietario_id as number;
+            clienteData = propiedad.propietario;
+            console.log(`API /api/facturacion/generar-facturas: Facturando al propietario - ID: ${clienteId}`);
+          } else if (propiedad.encargado_pago === 'Arrendatario' && propiedad.ocupante && !propiedad.ocupante_externo) {
+            clienteId = propiedad.ocupante_id as number;
+            clienteData = propiedad.ocupante;
+            console.log(`API /api/facturacion/generar-facturas: Facturando al arrendatario - ID: ${clienteId}`);
+          } else {
+            console.log(`API /api/facturacion/generar-facturas: PROBLEMA - No se pudo determinar cliente para propiedad ID ${propiedad.id}`);
+            console.log(`API /api/facturacion/generar-facturas: - encargado_pago: ${propiedad.encargado_pago}`);
+            console.log(`API /api/facturacion/generar-facturas: - tiene propietario: ${!!propiedad.propietario}`);
+            console.log(`API /api/facturacion/generar-facturas: - tiene ocupante: ${!!propiedad.ocupante}`);
+            console.log(`API /api/facturacion/generar-facturas: - ocupante_externo: ${propiedad.ocupante_externo}`);
+          }
         }
         
         if (!clienteId || !clienteData) {
+          console.log(`API /api/facturacion/generar-facturas: Omitiendo propiedad ID ${propiedad.id} - sin cliente válido`);
           resultados.omitidas++;
           continue;
         }
@@ -217,22 +271,33 @@ export async function POST(request: Request) {
         const iva = porcentajeIva > 0 ? parseFloat((baseImponible * porcentajeIva).toFixed(2)) : 0;
         const total = parseFloat((baseImponible + iva).toFixed(2));
         
-        // Verificar si ya existe una factura para este periodo, propiedad y estado borrador
-        const { data: facturaExistente, error: facturaExistenteError } = await supabaseAdmin
+        // Verificar si ya existe una factura para este periodo, propiedad, servicio y estado borrador
+        const { data: facturasExistentes, error: facturaExistenteError } = await supabaseAdmin
           .from('facturas')
-          .select('id')
+          .select('id, items_factura')
           .eq('periodo', periodo)
           .eq('propiedad_id', propiedad.id)
-          .eq('estado', 'Borrador')
-          .maybeSingle();
+          .eq('estado', 'Borrador');
           
         if (facturaExistenteError) {
-          throw new Error(`Error al verificar factura existente: ${facturaExistenteError.message}`);
+          throw new Error(`Error al verificar facturas existentes: ${facturaExistenteError.message}`);
         }
         
-        if (facturaExistente) {
+        // Verificar si ya existe una factura con el mismo servicio
+        let facturaDelMismoServicio = false;
+        if (facturasExistentes && facturasExistentes.length > 0) {
+          facturaDelMismoServicio = facturasExistentes.some(factura => {
+            if (factura.items_factura && factura.items_factura.length > 0) {
+              return factura.items_factura[0].codigoServicio === servicio.codigo;
+            }
+            return false;
+          });
+        }
+        
+        if (facturaDelMismoServicio) {
+          console.log(`API /api/facturacion/generar-facturas: Omitiendo propiedad ID ${propiedad.id} - ya existe factura borrador para servicio ${servicio.codigo}`);
           resultados.omitidas++;
-          continue; // Omitir si ya existe factura borrador para este periodo
+          continue; // Omitir si ya existe factura borrador para este servicio específico
         }
         
         // Preparar items_factura
@@ -277,6 +342,15 @@ export async function POST(request: Request) {
         );
         console.error(`Error procesando propiedad ${propiedad.id}:`, error);
       }
+    }
+    
+    console.log(`API /api/facturacion/generar-facturas: RESUMEN FINAL:`);
+    console.log(`API /api/facturacion/generar-facturas: - Propiedades procesadas: ${propiedades.length}`);
+    console.log(`API /api/facturacion/generar-facturas: - Facturas generadas: ${resultados.generadas}`);
+    console.log(`API /api/facturacion/generar-facturas: - Propiedades omitidas: ${resultados.omitidas}`);
+    console.log(`API /api/facturacion/generar-facturas: - Errores: ${resultados.errores}`);
+    if (resultados.erroresDetalle.length > 0) {
+      console.log(`API /api/facturacion/generar-facturas: - Detalles de errores:`, resultados.erroresDetalle);
     }
     
     return NextResponse.json({
