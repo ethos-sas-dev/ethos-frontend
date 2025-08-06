@@ -90,12 +90,14 @@ type Factura = {
     encargado_pago: string;
     propietario_id?: number;
     propietario?: {
+      id: number;
       tipo_persona: string;
       persona_natural?: { razon_social: string };
       persona_juridica?: { razon_social: string };
     };
     ocupante_id?: number;
     ocupante?: {
+      id: number;
       tipo_persona: string;
       persona_natural?: { razon_social: string };
       persona_juridica?: { razon_social: string };
@@ -105,6 +107,7 @@ type Factura = {
     area_total?: number;
   };
   cliente?: {
+    id: number;
     tipo_persona: string;
     persona_natural?: { razon_social: string };
     persona_juridica?: { razon_social: string };
@@ -309,6 +312,12 @@ export default function FacturacionPage() {
               persona_natural:persona_natural_id (razon_social),
               persona_juridica:persona_juridica_id (razon_social)
             )
+          ),
+          cliente:perfiles_cliente!cliente_id (
+            id,
+            tipo_persona,
+            persona_natural:persona_natural_id (razon_social),
+            persona_juridica:persona_juridica_id (razon_social)
           )
         `)
         .eq("estado", "Borrador");
@@ -749,19 +758,12 @@ export default function FacturacionPage() {
       // Buscar en los datos de la propiedad
       const identificador = formatPropertyIdentifier(factura.propiedad?.identificadores);
       
-      // Buscar en los datos del responsable de pago
+      // Buscar en los datos del cliente de la factura
       let nombreResponsable = '';
-      if (factura.propiedad) {
-        const encargadoPago = factura.propiedad.encargado_pago;
-        const responsable = encargadoPago === 'Propietario' 
-          ? factura.propiedad.propietario 
-          : factura.propiedad.ocupante;
-        
-        if (responsable) {
-          nombreResponsable = responsable.tipo_persona === 'Natural'
-            ? (responsable.persona_natural?.razon_social || '')
-            : (responsable.persona_juridica?.razon_social || '');
-        }
+      if (factura.cliente) {
+        nombreResponsable = factura.cliente.tipo_persona === 'Natural'
+          ? (factura.cliente.persona_natural?.razon_social || '')
+          : (factura.cliente.persona_juridica?.razon_social || '');
       }
       
       // Buscar en otros datos relevantes
@@ -945,7 +947,7 @@ export default function FacturacionPage() {
         "Propiedad", 
         "Periodo", 
         "Servicio", 
-        "Encargado de Pago",
+        "Cliente Facturado",
         "Estado", 
         "Observaciones",
         "Subtotal", 
@@ -972,22 +974,15 @@ export default function FacturacionPage() {
           ? factura.items_factura[0].descripcion 
           : 'N/A';
         
-        // Obtener encargado de pago
-        let encargadoPago = 'N/A';
-        if (factura.propiedad) {
-          const tipo = factura.propiedad.encargado_pago;
-          const responsable = tipo === 'Propietario' 
-            ? factura.propiedad.propietario 
-            : factura.propiedad.ocupante;
+        // Obtener cliente facturado
+        let clienteFacturado = 'N/A';
+        if (factura.cliente) {
+          const tipoPersona = factura.cliente.tipo_persona || 'N/A';
+          const nombre = tipoPersona === 'Natural'
+            ? factura.cliente.persona_natural?.razon_social
+            : factura.cliente.persona_juridica?.razon_social;
           
-          if (responsable) {
-            const tipoPersona = responsable.tipo_persona || 'N/A';
-            const nombre = tipoPersona === 'Natural'
-              ? responsable.persona_natural?.razon_social
-              : responsable.persona_juridica?.razon_social;
-            
-            encargadoPago = nombre || 'N/A';
-          }
+          clienteFacturado = nombre || 'N/A';
         }
         
         const fila = [
@@ -996,7 +991,7 @@ export default function FacturacionPage() {
           identificador,
           periodoFormateado,
           servicio,
-          encargadoPago,
+          clienteFacturado,
           factura.estado,
           factura.observaciones || '-',
           factura.subtotal || 0,
@@ -1093,17 +1088,12 @@ export default function FacturacionPage() {
       return;
     }
     
-    // Obtener responsable de pago
+    // Obtener cliente de la factura
     let clienteNombre = 'Cliente';
-    const encargadoPago = factura.propiedad.encargado_pago;
-    const responsable = encargadoPago === 'Propietario' 
-      ? factura.propiedad.propietario 
-      : factura.propiedad.ocupante;
-    
-    if (responsable) {
-      clienteNombre = responsable.tipo_persona === 'Natural'
-        ? (responsable.persona_natural?.razon_social || 'Cliente')
-        : (responsable.persona_juridica?.razon_social || 'Cliente');
+    if (factura.cliente) {
+      clienteNombre = factura.cliente.tipo_persona === 'Natural'
+        ? (factura.cliente.persona_natural?.razon_social || 'Cliente')
+        : (factura.cliente.persona_juridica?.razon_social || 'Cliente');
     }
     
     // Obtener el área de la propiedad (podría venir en la propiedad o habría que buscarla)
@@ -1757,7 +1747,7 @@ export default function FacturacionPage() {
                                                           </div>
                                                         </TableHead>
                                                         <TableHead className="sticky top-0 bg-white">Propiedad</TableHead>
-                                                        <TableHead className="sticky top-0 bg-white">Encargado Pago</TableHead>
+                                                        <TableHead className="sticky top-0 bg-white">Cliente Facturado</TableHead>
                                                         <TableHead className="sticky top-0 bg-white">Estado</TableHead>
                                                         <TableHead className="sticky top-0 bg-white">Observaciones</TableHead>
                                                         <TableHead className="text-right sticky top-0 bg-white">Subtotal</TableHead>
@@ -1784,29 +1774,33 @@ export default function FacturacionPage() {
                                                             </TableCell>
                                                             <TableCell>{identificadorPropiedad}</TableCell>
                                                             <TableCell>
-                                                              {factura.propiedad ? (
+                                                              {factura.cliente ? (
                                                                 (() => {
-                                                                  const encargadoPago = factura.propiedad.encargado_pago;
-                                                                  const responsable = encargadoPago === 'Propietario' 
-                                                                    ? factura.propiedad.propietario 
-                                                                    : factura.propiedad.ocupante;
-                                                                  
-                                                                  if (!responsable) return <div className="text-gray-500">No asignado</div>;
-                                                                  
-                                                                  const tipoPersona = responsable.tipo_persona || 'N/A';
+                                                                  const cliente = factura.cliente;
+                                                                  const tipoPersona = cliente.tipo_persona || 'N/A';
                                                                   const nombre = tipoPersona === 'Natural'
-                                                                    ? responsable.persona_natural?.razon_social
-                                                                    : responsable.persona_juridica?.razon_social;
+                                                                    ? cliente.persona_natural?.razon_social
+                                                                    : cliente.persona_juridica?.razon_social;
+                                                                  
+                                                                  // Determinar si es el propietario u ocupante para mostrar contexto
+                                                                  let rolCliente = 'Cliente';
+                                                                  if (factura.propiedad) {
+                                                                    if (factura.propiedad.propietario?.id === cliente.id) {
+                                                                      rolCliente = 'Propietario';
+                                                                    } else if (factura.propiedad.ocupante?.id === cliente.id) {
+                                                                      rolCliente = 'Arrendatario';
+                                                                    }
+                                                                  }
                                                                   
                                                                   return (
                                                                     <>
                                                                       <div className="font-medium">{nombre || 'N/A'}</div>
-                                                                      <div className="text-xs text-gray-500">{encargadoPago} ({tipoPersona})</div>
+                                                                      <div className="text-xs text-gray-500">{rolCliente} ({tipoPersona})</div>
                                                                     </>
                                                                   );
                                                                 })()
                                                               ) : (
-                                                                <div className="text-gray-500">Sin propiedad</div>
+                                                                <div className="text-gray-500">Sin cliente</div>
                                                               )}
                                                             </TableCell>
                                                             <TableCell>
