@@ -167,6 +167,24 @@ function prepararDetallesContifico(items: ItemFactura[], factura: FacturaComplet
 }
 
 /**
+ * Determina el POS de Contifico basándose en el nombre del proyecto.
+ */
+function determinarPosContifico(nombreProyecto: string): string {
+  const nombreLowerCase = nombreProyecto.toLowerCase();
+  
+  if (nombreLowerCase.includes('almax 2')) {
+    return 'c3f27aa1-44a5-41a0-bf39-1c9a2f710f50';
+  } else if (nombreLowerCase.includes('almax 3')) {
+    return 'b8dafe87-f3d4-46c6-92b8-24c36e151dfb';
+  } else if (nombreLowerCase.includes('almax center')) {
+    return '092102b0-dc4e-4293-bb0e-cab05f5c3a66';
+  }
+  
+  // Valor por defecto (mantener el anterior como fallback)
+  return 'b8dafe87-f3d4-46c6-92b8-24c36e151dfb';
+}
+
+/**
  * Construye el payload completo y ENVÍA a Contifico.
  */
 const prepararYEnviarAContifico = async (
@@ -236,8 +254,11 @@ const prepararYEnviarAContifico = async (
   const servicioNombre = factura.items_factura?.[0]?.descripcion || factura.items_factura?.[0]?.codigoServicio || 'ALICUOTA';
   const descripcionPayload = `${servicioNombre} ${periodoFormateado}, ${identificadoresFormateados}`.substring(0, 300);
 
+  // Determinar el POS dinámicamente basándose en el proyecto
+  const posContifico = determinarPosContifico(factura.propiedad.proyecto.nombre);
+
   const payloadContifico = {
-    pos: 'b8dafe87-f3d4-46c6-92b8-24c36e151dfb', // Asegúrate que este POS sea el correcto
+    pos: posContifico,
     fecha_emision: fechaEmision,
     tipo_documento: 'FAC',
     documento: numeroDocumento, // Usa el número de documento proporcionado
