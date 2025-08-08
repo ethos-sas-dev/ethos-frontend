@@ -20,6 +20,35 @@ type GenerarFacturasRequest = {
   propiedadesIds?: number[]; // IDs de propiedades específicas (opcional)
 };
 
+type AreaDesglosada = {
+  area: number;
+  tipo_area: string;
+  nombre_adicional?: string;
+};
+
+/**
+ * Extrae el área útil del desglose de áreas de una propiedad.
+ * Si no hay desglose o no se encuentra área útil, retorna el área total.
+ */
+function obtenerAreaParaCalculo(propiedad: any, codigoServicio: string): number {
+  // Para el servicio AOACO, usar solo el área útil
+  if (codigoServicio === 'AOACO' && propiedad.areas_desglosadas && Array.isArray(propiedad.areas_desglosadas)) {
+    const areaUtil = propiedad.areas_desglosadas.find((area: AreaDesglosada) => 
+      area.tipo_area?.toLowerCase() === 'util'
+    );
+    
+    if (areaUtil && areaUtil.area > 0) {
+      console.log(`API /api/facturacion/generar-facturas: Usando área útil para AOACO - Propiedad ID ${propiedad.id}: ${areaUtil.area} m²`);
+      return areaUtil.area;
+    } else {
+      console.warn(`API /api/facturacion/generar-facturas: No se encontró área útil para AOACO - Propiedad ID ${propiedad.id}, usando área total`);
+    }
+  }
+  
+  // Para otros servicios o cuando no hay desglose, usar área total
+  return propiedad.area_total || 0;
+}
+
 export async function POST(request: Request) {
   if (!supabaseAdmin) {
     console.error("API /api/facturacion/generar-facturas: Error de configuración del servidor (Supabase Admin Client no disponible)");
@@ -78,7 +107,7 @@ export async function POST(request: Request) {
       .select(`
         id, estado_uso, monto_alicuota_ordinaria, area_total, encargado_pago,
         proyecto_id, propietario_id, ocupante_id, ocupante_externo,
-        identificadores,
+        identificadores, areas_desglosadas,
         propietario:propietario_id (
           id, tipo_persona, rol,
           persona_natural:persona_natural_id (id, razon_social, ruc, cedula),
@@ -207,7 +236,7 @@ export async function POST(request: Request) {
         let precioUnitario = servicio.precio_base;
         let cantidad = 1;
         let usarArea = servicio.unidad?.toLowerCase().includes('m2');
-        let area = propiedad.area_total || 0;
+        let area = obtenerAreaParaCalculo(propiedad, servicio.codigo);
         let porcentajeIva = servicio.porcentaje_iva_defecto || 0;
         
         // Buscar configuración específica para esta propiedad, cliente y servicio
