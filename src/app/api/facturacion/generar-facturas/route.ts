@@ -31,6 +31,26 @@ type AreaDesglosada = {
  * Si no hay desglose o no se encuentra área útil, retorna el área total.
  */
 function obtenerAreaParaCalculo(propiedad: any, codigoServicio: string): number {
+  // Para el servicio APAC (parqueo), usar solo el área de parqueo/estacionamiento
+  if (codigoServicio === 'APAC') {
+    if (propiedad.areas_desglosadas && Array.isArray(propiedad.areas_desglosadas)) {
+      const areaParqueo = propiedad.areas_desglosadas.find((area: AreaDesglosada) => {
+        const tipo = area.tipo_area?.toLowerCase() || '';
+        // cubrir variaciones: parqueo, parqueadero, estacionamiento
+        return tipo.includes('parqueo')
+      });
+      if (areaParqueo && areaParqueo.area > 0) {
+        console.log(`API /api/facturacion/generar-facturas: Usando área de parqueo para APAC - Propiedad ID ${propiedad.id}: ${areaParqueo.area} m²`);
+        return areaParqueo.area;
+      }
+      console.warn(`API /api/facturacion/generar-facturas: No se encontró área de parqueo para APAC - Propiedad ID ${propiedad.id}`);
+      // Para APAC, si no hay área de parqueo, no se debe facturar
+      return 0;
+    }
+    console.warn(`API /api/facturacion/generar-facturas: Propiedad ID ${propiedad.id} no tiene desglose de áreas para APAC`);
+    return 0;
+  }
+
   // Para el servicio AOACO, usar solo el área útil
   if (codigoServicio === 'AOACO' && propiedad.areas_desglosadas && Array.isArray(propiedad.areas_desglosadas)) {
     const areaUtil = propiedad.areas_desglosadas.find((area: AreaDesglosada) => 
