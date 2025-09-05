@@ -16,6 +16,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { Input } from "@/app/_components/ui/input";
 import { Button } from "@/app/_components/ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/app/_components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/_components/ui/select";
 import {
   Table,
@@ -499,6 +500,7 @@ export default function ReportesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefetching, setIsRefetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("documentacion");
   
   // Filtros
   const [searchQuery, setSearchQuery] = useState("");
@@ -525,10 +527,13 @@ export default function ReportesPage() {
         .select(`
           id, 
           proyecto_id, 
+          area_total,
           codigo_catastral, 
           estado_entrega, 
           estado_uso,
           actividad,
+          monto_alicuota_ordinaria,
+          monto_fondo_inicial,
           escritura_pdf_id, 
           acta_entrega_pdf_id, 
           contrato_arrendamiento_pdf_id,
@@ -712,6 +717,30 @@ export default function ReportesPage() {
     }
   };
 
+  // Identificación (RUC o cédula) de propietario
+  const getPropietarioIdentificacion = (propiedad: Propiedad) => {
+    if (!propiedad.propietario) return '';
+    if (propiedad.propietario.tipo_persona === 'Natural') {
+      const pn = propiedad.propietario.persona_natural;
+      return pn?.ruc || pn?.cedula || '';
+    } else {
+      const pj = propiedad.propietario.persona_juridica;
+      return pj?.ruc || '';
+    }
+  };
+
+  // Identificación (RUC o cédula) de ocupante
+  const getOcupanteIdentificacion = (propiedad: Propiedad) => {
+    if (!propiedad.ocupante) return '';
+    if (propiedad.ocupante.tipo_persona === 'Natural') {
+      const pn = propiedad.ocupante.persona_natural;
+      return pn?.ruc || pn?.cedula || '';
+    } else {
+      const pj = propiedad.ocupante.persona_juridica;
+      return pj?.ruc || '';
+    }
+  };
+
   // Propiedades filtradas
   const filteredPropiedades = useMemo(() => {
     return propiedades.filter(propiedad => {
@@ -868,7 +897,7 @@ export default function ReportesPage() {
     XLSX.utils.book_append_sheet(wb, ws, "Reporte Documentación");
     
     // Guardar el archivo
-    XLSX.writeFile(wb, `reporte_documentacion_${new Date().toISOString().slice(0,10)}.xlsx`);
+    XLSX.writeFile(wb, `reporte_documentacion_ethos_${new Date().toISOString().slice(0,10)}.xlsx`);
   };
 
   // Si no es admin o directorio, mostrar mensaje de acceso denegado
@@ -887,6 +916,39 @@ export default function ReportesPage() {
     );
   }
 
+  // Generar Excel para "Facturación"
+  const exportarExcelFacturacion = () => {
+    const data = propiedades
+      .filter(p => proyectoFiltro === "todos" || p.proyecto_id.toString() === proyectoFiltro)
+      .map(p => {
+        const proyectoNombre = p.proyecto?.nombre || '';
+        const esAlmaxCenter = proyectoNombre.toLowerCase().includes('almax center');
+        const valorAlicuota = esAlmaxCenter ? 'N/A (especial)' : (p.monto_alicuota_ordinaria ?? '0');
+        const valorFondoInicial = esAlmaxCenter ? 'N/A (especial)' : (p.monto_fondo_inicial ?? '0');
+        const identSuperior = p.identificadores?.superior || '';
+        const idSuperior = p.identificadores?.idSuperior || '';
+        const identInferior = p.identificadores?.inferior || '';
+        const idInferior = p.identificadores?.idInferior || '';
+        return {
+          'Proyecto': proyectoNombre,
+          'Identificador Superior': `${identSuperior} ${idSuperior}`.trim(),
+          'Identificador Inferior': `${identInferior} ${idInferior}`.trim(),
+          'Área Total (m²)': p.area_total ?? 0,
+          'Propietario': getPropietarioNombre(p as any),
+          'Propietario Identificación': getPropietarioIdentificacion(p as any),
+          'Ocupante': getOcupanteNombre(p as any),
+          'Ocupante Identificación': getOcupanteIdentificacion(p as any),
+          'Monto Alícuota Ordinaria': valorAlicuota,
+          'Monto Fondo Inicial': valorFondoInicial,
+        };
+      });
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Facturación");
+    XLSX.writeFile(wb, `datos_generales_ethos_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -895,31 +957,15 @@ export default function ReportesPage() {
     >
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Reporte de Documentación</h1>
-          <p className="text-gray-600">
-            Visualiza el porcentaje de documentos subidos para cada propiedad
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">Reportes</h1>
+          <p className="text-gray-600">Documentación y datos de facturación por proyecto</p>
         </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => { setIsRefetching(true); fetchData(); }}
-            disabled={isLoading || isRefetching}
-            className="flex items-center gap-2"
-          >
-            <ArrowPathIcon className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
-            Actualizar
-          </Button>
-          <Button
-            onClick={exportarExcel}
-            disabled={isLoading || filteredPropiedades.length === 0}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-2"
-          >
-            <DocumentArrowDownIcon className="h-4 w-4" />
-            Exportar Excel
-          </Button>
-        </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="documentacion">Documentación</TabsTrigger>
+            <TabsTrigger value="facturacion">Datos Generales y Facturación</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       {/* Filtros */}
@@ -975,61 +1021,108 @@ export default function ReportesPage() {
         </div>
       </div>
 
-      {/* Resumen de resultados */}
-      {!isLoading && (
-        <div className="mb-4 text-sm text-gray-600">
-          {filteredPropiedades.length} {filteredPropiedades.length === 1 ? 'propiedad encontrada' : 'propiedades encontradas'}
-        </div>
-      )}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsContent value="documentacion">
+          <div className="flex items-center justify-between mb-4">
+            {!isLoading && (
+              <div className="text-sm text-gray-600">
+                {filteredPropiedades.length} {filteredPropiedades.length === 1 ? 'propiedad encontrada' : 'propiedades encontradas'}
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => { setIsRefetching(true); fetchData(); }}
+                disabled={isLoading || isRefetching}
+                className="flex items-center gap-2"
+              >
+                <ArrowPathIcon className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
+                Actualizar
+              </Button>
+              <Button
+                onClick={exportarExcel}
+                disabled={isLoading || filteredPropiedades.length === 0}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-2"
+              >
+                <DocumentArrowDownIcon className="h-4 w-4" />
+                Exportar Excel
+              </Button>
+            </div>
+          </div>
+          {isLoading ? (
+            <TableSkeleton rows={10} />
+          ) : error ? (
+            <div className="bg-red-50 text-red-700 p-4 rounded-md border border-red-200 text-center">
+              <p className="font-medium">Error al cargar datos</p>
+              <p className="text-sm mt-1">{error}</p>
+            </div>
+          ) : filteredPropiedades.length === 0 ? (
+            <div className="bg-gray-50 border rounded-lg p-8 text-center">
+              <BuildingOffice2Icon className="mx-auto h-12 w-12 text-gray-400" />
+              <h3 className="mt-2 text-sm font-medium text-gray-900">
+                No se encontraron propiedades
+              </h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Intenta con otros filtros o refresca la página.
+              </p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[200px]">Proyecto</TableHead>
+                    <TableHead>Identificador</TableHead>
+                    <TableHead>Propietario</TableHead>
+                    <TableHead>Ocupante</TableHead>
+                    <TableHead>Documentación</TableHead>
+                    <TableHead>Escritura</TableHead>
+                    <TableHead>Acta Entrega</TableHead>
+                    <TableHead>Contrato</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredPropiedades.map((propiedad) => (
+                    <PropertyRow 
+                      key={propiedad.id}
+                      propiedad={propiedad}
+                      calcularPorcentajeDocumentacion={calcularPorcentajeDocumentacion}
+                      getPropietarioNombre={getPropietarioNombre}
+                      getOcupanteNombre={getOcupanteNombre}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
 
-      {/* Tabla de Resultados */}
-      {isLoading ? (
-        <TableSkeleton rows={10} />
-      ) : error ? (
-        <div className="bg-red-50 text-red-700 p-4 rounded-md border border-red-200 text-center">
-          <p className="font-medium">Error al cargar datos</p>
-          <p className="text-sm mt-1">{error}</p>
-        </div>
-      ) : filteredPropiedades.length === 0 ? (
-        <div className="bg-gray-50 border rounded-lg p-8 text-center">
-          <BuildingOffice2Icon className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">
-            No se encontraron propiedades
-          </h3>
-          <p className="mt-1 text-sm text-gray-500">
-            Intenta con otros filtros o refresca la página.
-          </p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-lg border overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[200px]">Proyecto</TableHead>
-                <TableHead>Identificador</TableHead>
-                <TableHead>Propietario</TableHead>
-                <TableHead>Ocupante</TableHead>
-                <TableHead>Documentación</TableHead>
-                <TableHead>Escritura</TableHead>
-                <TableHead>Acta Entrega</TableHead>
-                <TableHead>Contrato</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredPropiedades.map((propiedad) => (
-                <PropertyRow 
-                  key={propiedad.id}
-                  propiedad={propiedad}
-                  calcularPorcentajeDocumentacion={calcularPorcentajeDocumentacion}
-                  getPropietarioNombre={getPropietarioNombre}
-                  getOcupanteNombre={getOcupanteNombre}
-                />
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+        <TabsContent value="facturacion">
+          <div className="flex items-center justify-end mb-4 gap-2">
+            <Button
+              variant="outline"
+              onClick={() => { setIsRefetching(true); fetchData(); }}
+              disabled={isLoading || isRefetching}
+              className="flex items-center gap-2"
+            >
+              <ArrowPathIcon className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
+              Actualizar
+            </Button>
+            <Button
+              onClick={exportarExcelFacturacion}
+              disabled={isLoading || propiedades.length === 0}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-2"
+            >
+              <DocumentArrowDownIcon className="h-4 w-4" />
+              Exportar Excel Facturación
+            </Button>
+          </div>
+          <div className="bg-gray-50 border rounded-lg p-6 text-sm text-gray-700">
+            Descarga un Excel con datos por proyecto: identificadores, área total, propietarios, ocupantes y valores base a facturar.
+          </div>
+        </TabsContent>
+      </Tabs>
     </motion.div>
   );
 }
