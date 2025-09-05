@@ -1058,14 +1058,14 @@ export default function PropertyDetailPage() {
                         <div className="space-y-3">
                             <div className="flex justify-between items-center p-3 bg-gray-50 rounded-md">
                                 <span className="text-sm font-medium text-gray-600">Área Total</span>
-                                <span className="text-base font-semibold">{formatNumber(property.area_total ?? 0)} m²</span>
+                                <span className="text-base font-semibold">{property.area_total ?? 0} m²</span>
                             </div>
                             {property.areas_desglosadas?.map((area, index) => (
                                 <div key={area.id || index} className="flex justify-between items-center text-sm pl-3">
                                     <span className="text-gray-500">
                                         Área {area.tipo_area} {area.nombre_adicional ? `(${area.nombre_adicional})` : ''}
                                     </span>
-                                    <span className="font-medium">{formatNumber(area.area)} m²</span>
+                                    <span className="font-medium">{area.area} m²</span>
                                 </div>
                             ))}
                             {(!property.areas_desglosadas || property.areas_desglosadas.length === 0) && property.area_total && (
