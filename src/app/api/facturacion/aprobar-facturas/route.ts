@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import axios from 'axios';
+import { Resend } from 'resend';
 
 // Configuración del Cliente Supabase Admin
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -18,6 +19,8 @@ type AprobarFacturasRequest = {
   facturaIds: number[];
   prefijoSecuencia?: string;      // Nuevo campo opcional
   numeroSecuenciaInicial?: number; // Nuevo campo opcional
+  testEmailReporte?: boolean;      // Modo prueba: solo enviar correo de reporte
+  testRecipient?: string;          // Receptor opcional para modo prueba
 };
 
 // Tipos simplificados para datos relacionados (ajustar según schema real)
@@ -67,6 +70,45 @@ type FacturaCompleta = {
 
 // URL base de la API de Contífico (basado en el ejemplo anterior)
 const CONTIFICO_API_URL = 'https://api.contifico.com/sistema/api/v1/documento/';
+
+// Inicialización de Resend (correo de reporte)
+const resendApiKey = process.env.RESEND_API_KEY;
+const resend = resendApiKey ? new Resend(resendApiKey) : null;
+
+// Helper: obtener partes de fecha en zona horaria de Ecuador
+function obtenerPartesFechaEcuador(fecha: Date = new Date()): { day: string; month: string; year: string } {
+  const partes = new Intl.DateTimeFormat('es-EC', {
+    timeZone: 'America/Guayaquil',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(fecha);
+  const map: Record<string, string> = {};
+  for (const p of partes) {
+    map[p.type] = p.value;
+  }
+  return { day: map.day, month: map.month, year: map.year } as { day: string; month: string; year: string };
+}
+
+// Redondeo bancario (ties-to-even) para alinear con Contífico
+function roundHalfEven(value: number, decimals: number = 2): number {
+  const factor = Math.pow(10, decimals);
+  const scaled = value * factor;
+  const floor = Math.floor(scaled);
+  const diff = scaled - floor;
+
+  // Evitar errores por flotantes
+  const isHalf = Math.abs(diff - 0.5) < 1e-10;
+
+  let resultInt: number;
+  if (isHalf) {
+    // Si es .5, redondear hacia el par
+    resultInt = floor % 2 === 0 ? floor : floor + 1;
+  } else {
+    resultInt = Math.round(scaled);
+  }
+  return resultInt / factor;
+}
 
 // Funciones Auxiliares (Inspiradas en código anterior)
 
@@ -212,7 +254,8 @@ const prepararYEnviarAContifico = async (
   
   // 2. Construir Payload (Ya no genera número de documento aquí)
   const ahora = new Date();
-  const fechaEmision = `${('0' + ahora.getDate()).slice(-2)}/${('0' + (ahora.getMonth() + 1)).slice(-2)}/${ahora.getFullYear()}`;
+  const partesFechaEC = obtenerPartesFechaEcuador(ahora);
+  const fechaEmision = `${partesFechaEC.day}/${partesFechaEC.month}/${partesFechaEC.year}`;
   
   // Obtener los identificadores de la propiedad en formato "ETAPA 4 - LOTE 2 - BODEGA 8"
   let identificadoresFormateados = '';
@@ -268,8 +311,30 @@ const prepararYEnviarAContifico = async (
     descripcion: descripcionPayload,
     subtotal_0: detallesContifico[0].base_cero, 
     subtotal_12: detallesContifico[0].base_gravable,
-    iva: parseFloat(factura.monto_iva.toFixed(2)), 
-    total: parseFloat(factura.total.toFixed(2)), 
+    // IVA y total recalculados con redondeo bancario para evitar descuadres de asientos
+    iva: (() => {
+      const tasa = factura.items_factura?.[0]?.porcentajeIva || 0;
+      const baseGravable = detallesContifico[0].base_gravable || 0;
+      const ivaCalc = roundHalfEven(baseGravable * tasa, 2);
+      const subtotalSumado = roundHalfEven((detallesContifico[0].base_cero || 0) + baseGravable, 2);
+      const totalCalc = roundHalfEven(subtotalSumado + ivaCalc, 2);
+      // Log diagnóstico
+      try {
+        console.log(
+          `Diagnóstico redondeo → factura ${factura.id}: subtotal=${subtotalSumado} (BD:${parseFloat(factura.subtotal.toFixed(2))}), ` +
+          `iva_even=${ivaCalc} (BD:${parseFloat(factura.monto_iva.toFixed(2))}), total_even=${totalCalc} (BD:${parseFloat(factura.total.toFixed(2))})`
+        );
+      } catch {}
+      // Retornar únicamente el IVA; el total se asigna abajo para mantener coherencia
+      return ivaCalc;
+    })(), 
+    total: (() => {
+      const tasa = factura.items_factura?.[0]?.porcentajeIva || 0;
+      const baseGravable = detallesContifico[0].base_gravable || 0;
+      const ivaCalc = roundHalfEven(baseGravable * tasa, 2);
+      const subtotalSumado = roundHalfEven((detallesContifico[0].base_cero || 0) + baseGravable, 2);
+      return roundHalfEven(subtotalSumado + ivaCalc, 2);
+    })(), 
     detalles: detallesContifico,
     electronico: true
   };
@@ -330,7 +395,54 @@ export async function POST(request: Request) {
 
   try {
     const data: AprobarFacturasRequest = await request.json();
-    const { facturaIds, prefijoSecuencia, numeroSecuenciaInicial } = data; // Obtener los campos
+    const { facturaIds, prefijoSecuencia, numeroSecuenciaInicial, testEmailReporte, testRecipient } = data; // Obtener los campos
+    
+    // MODO PRUEBA: Enviar correo con CSV simulado sin procesar Contifico
+    if (testEmailReporte) {
+      if (!resend) {
+        console.warn('RESEND_API_KEY no configurada. Se omite envío de correo de reporte (modo prueba).');
+        return NextResponse.json({ success: false, message: 'RESEND_API_KEY no configurada en el servidor' }, { status: 500 });
+      }
+      try {
+        const reporteFilas: { facturaId: number; numeroDocumento: string; resultado: 'OK' | 'ERROR'; contificoId?: string; error?: string }[] = [
+          { facturaId: 101, numeroDocumento: '001-002-000000123', resultado: 'OK', contificoId: 'conti-abc-123' },
+          { facturaId: 102, numeroDocumento: '001-002-000000124', resultado: 'ERROR', error: 'Error 409 de Contifico: {"mensaje":"Documento ya existe"}' }
+        ];
+        const csvHeaders = ['factura_id', 'numero_documento', 'resultado', 'contifico_id', 'error'];
+        let csvContent = csvHeaders.join(',') + '\n';
+        for (const fila of reporteFilas) {
+          const row = [
+            fila.facturaId,
+            fila.numeroDocumento,
+            fila.resultado,
+            fila.contificoId || '',
+            (fila.error || '').replace(/\n|\r/g, ' ').replace(/,/g, ';')
+          ];
+          csvContent += row.join(',') + '\n';
+        }
+        const fecha = new Date();
+        const partesArchivoEC = obtenerPartesFechaEcuador(fecha);
+        const nombreArchivo = `reporte_aprobacion_${partesArchivoEC.year}-${partesArchivoEC.month}-${partesArchivoEC.day}.csv`;
+        const resultadosPrueba = { aprobadas: 1, errores: 1 };
+        const resumenTexto = `Aprobadas: ${resultadosPrueba.aprobadas}, Errores: ${resultadosPrueba.errores}. (MODO PRUEBA)`;
+
+        await resend.emails.send({
+          from: 'no-reply@transactional.ethos.com.ec',
+          to: testRecipient || 'valentinacasteline@gmail.com',
+          subject: 'Reporte de aprobación de facturas (PRUEBA)',
+          text: `Se adjunta CSV de resultados (modo prueba).\n${resumenTexto}`,
+          attachments: [{
+            filename: nombreArchivo,
+            content: Buffer.from(csvContent).toString('base64')
+          }]
+        } as any);
+
+        return NextResponse.json({ success: true, ...resultadosPrueba, mensaje: 'Correo de prueba enviado' });
+      } catch (e: any) {
+        console.error('Error enviando correo de prueba:', e);
+        return NextResponse.json({ success: false, message: e.message || 'Error enviando correo de prueba' }, { status: 500 });
+      }
+    }
     
     // Validar que los IDs de factura existen
     if (!facturaIds || !Array.isArray(facturaIds) || facturaIds.length === 0) {
@@ -405,6 +517,8 @@ export async function POST(request: Request) {
 
     // 3. Procesar cada factura
     const resultados = { aprobadas: 0, errores: 0, erroresDetalle: [] as { facturaId: number; error: string }[] };
+    // Estructura para reporte por correo
+    const reporteFilas: { facturaId: number; numeroDocumento: string; resultado: 'OK' | 'ERROR'; contificoId?: string; error?: string }[] = [];
     
     for (const facturaBase of facturasParaProcesar) {
         // Asegurar que las relaciones sean objetos únicos y no arrays
@@ -452,6 +566,13 @@ export async function POST(request: Request) {
             throw new Error(`Error al actualizar estado tras éxito Contifico: ${updateError.message}`);
           }
           resultados.aprobadas++;
+          // Agregar fila al reporte como exitosa
+          reporteFilas.push({
+            facturaId: factura.id,
+            numeroDocumento,
+            resultado: 'OK',
+            contificoId: contificoResultado.contificoId
+          });
         } else {
           // Error Contifico: Mantener borrador y registrar error
           const { error: updateError } = await supabaseAdmin
@@ -475,9 +596,58 @@ export async function POST(request: Request) {
             .eq('id', factura.id)
             .maybeSingle(); // Ignorar error si no se puede actualizar
         }
+        // Agregar fila al reporte como error
+        const numeroDocumentoFallido = `${prefijoSecuencia}${(siguienteNumeroSecuencia - 1).toString().padStart(9, '0')}`;
+        reporteFilas.push({
+          facturaId: factura.id,
+          numeroDocumento: numeroDocumentoFallido,
+          resultado: 'ERROR',
+          error: error.message || 'Error desconocido'
+        });
       }
     }
     
+    // Enviar correo con reporte si hubo al menos una aprobada
+    if (resultados.aprobadas > 0) {
+      try {
+        if (!resend) {
+          console.warn('RESEND_API_KEY no configurada. Se omite envío de correo de reporte.');
+        } else {
+          // Construir CSV
+          const csvHeaders = ['factura_id', 'numero_documento', 'resultado', 'contifico_id', 'error'];
+          let csvContent = csvHeaders.join(',') + '\n';
+          for (const fila of reporteFilas) {
+            const row = [
+              fila.facturaId,
+              fila.numeroDocumento,
+              fila.resultado,
+              fila.contificoId || '',
+              (fila.error || '').replace(/\n|\r/g, ' ').replace(/,/g, ';')
+            ];
+            csvContent += row.join(',') + '\n';
+          }
+
+          const fecha = new Date();
+          const partesArchivoEC = obtenerPartesFechaEcuador(fecha);
+          const nombreArchivo = `reporte_aprobacion_${partesArchivoEC.year}-${partesArchivoEC.month}-${partesArchivoEC.day}.csv`;
+          const resumenTexto = `Aprobadas: ${resultados.aprobadas}, Errores: ${resultados.errores}.`;
+
+          await resend.emails.send({
+            from: 'no-reply@transactional.ethos.com.ec',
+            to: 'valentinacasteline@gmail.com',
+            subject: 'Reporte de aprobación de facturas',
+            text: `Se adjunta CSV de resultados.\n${resumenTexto}`,
+            attachments: [{
+              filename: nombreArchivo,
+              content: Buffer.from(csvContent).toString('base64')
+            }]
+          } as any);
+        }
+      } catch (correoError: any) {
+        console.error('Error enviando correo de reporte:', correoError);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       ...resultados,

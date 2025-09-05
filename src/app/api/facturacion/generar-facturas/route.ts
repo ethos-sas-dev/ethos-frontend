@@ -259,39 +259,90 @@ export async function POST(request: Request) {
         let area = obtenerAreaParaCalculo(propiedad, servicio.codigo);
         let porcentajeIva = servicio.porcentaje_iva_defecto || 0;
         
-        // Buscar configuración específica para esta propiedad, cliente y servicio
-        const { data: configuracionEspecifica, error: configError } = await supabaseAdmin
-          .from('configuraciones_facturacion')
-          .select('*')
-          .eq('propiedad_id', propiedad.id)
-          .eq('cliente_id', clienteId)
-          .eq('servicio_id', servicioId)
-          .eq('activo', true)
-          .maybeSingle();
-        
-        if (configError && configError.code !== 'PGRST116') {
-          throw new Error(`Error al buscar configuración de facturación: ${configError.message}`);
+        // Buscar configuración específica: 1) intentar por servicio_id; 2) fallback genérico
+        let configuracionEspecifica: any = null;
+        let origenConfig: 'por_servicio' | 'generica' | 'ninguna' = 'ninguna';
+
+        // Intento 1: por servicio_id (si la columna existe en la BD)
+        try {
+          const { data: confSrv, error: errSrv } = await supabaseAdmin
+            .from('configuraciones_facturacion')
+            .select('*')
+            .eq('propiedad_id', propiedad.id)
+            .eq('cliente_id', clienteId)
+            .eq('servicio_id', servicioId)
+            .eq('activo', true)
+            .maybeSingle();
+          if (errSrv && errSrv.code && errSrv.code !== 'PGRST116') {
+            // Si es error de columna inexistente, ignorar; otros errores detener
+            if (errSrv.details?.includes('servicio_id') || (errSrv.message && errSrv.message.toLowerCase().includes('servicio_id'))) {
+              console.warn('API /api/facturacion/generar-facturas: columna servicio_id no existe en configuraciones_facturacion, se usará fallback genérico');
+            } else {
+              throw errSrv;
+            }
+          }
+          if (confSrv) {
+            configuracionEspecifica = confSrv;
+            origenConfig = 'por_servicio';
+          }
+        } catch (e) {
+          console.warn('API /api/facturacion/generar-facturas: error consultando configuración por servicio_id, usando fallback genérico', e);
+        }
+
+        // Intento 2: genérica activa para propiedad+cliente
+        if (!configuracionEspecifica) {
+          const { data: confGen, error: errGen } = await supabaseAdmin
+            .from('configuraciones_facturacion')
+            .select('*')
+            .eq('propiedad_id', propiedad.id)
+            .eq('cliente_id', clienteId)
+            .eq('activo', true)
+            .maybeSingle();
+          if (errGen && errGen.code !== 'PGRST116') {
+            throw new Error(`Error al buscar configuración de facturación: ${errGen.message}`);
+          }
+          if (confGen) {
+            configuracionEspecifica = confGen;
+            origenConfig = 'generica';
+          }
         }
         
         // Aplicar configuración específica si existe
         if (configuracionEspecifica) {
-          // Si hay tasa base especial, usarla en lugar del precio base
-          if (configuracionEspecifica.tasa_base_especial !== null) {
-            precioUnitario = configuracionEspecifica.tasa_base_especial;
-            // Si tenemos tasa especial, asumimos que debemos usar el área
-            usarArea = true;
-          }
-          
-          // Si hay configuración de IVA, usarla
+          // 1) IVA general (si está definido en la config)
           if (configuracionEspecifica.aplica_iva_general !== null) {
             porcentajeIva = configuracionEspecifica.aplica_iva_general ? 
               (configuracionEspecifica.porcentaje_iva_general || 0) : 0;
-              
-            // Convertir de porcentaje a decimal si es necesario
-            if (porcentajeIva > 1) {
-              porcentajeIva = porcentajeIva / 100;
+            if (porcentajeIva > 1) porcentajeIva = porcentajeIva / 100;
+          }
+
+          // 2) Tasa especial. Dos fuentes:
+          //   a) Campo tasa_base_especial general
+          //   b) precios_especiales_por_servicio[codigoServicio] si existe
+          let tasaEspecial: number | null = null;
+          if (configuracionEspecifica.tasa_base_especial !== null && configuracionEspecifica.tasa_base_especial !== undefined) {
+            tasaEspecial = Number(configuracionEspecifica.tasa_base_especial);
+          }
+          if (!tasaEspecial && configuracionEspecifica.precios_especiales_por_servicio) {
+            try {
+              const mapa = configuracionEspecifica.precios_especiales_por_servicio as Record<string, any>;
+              const porServicio = mapa?.[servicio.codigo];
+              if (porServicio && typeof porServicio === 'number') {
+                tasaEspecial = porServicio;
+              } else if (porServicio && typeof porServicio === 'object' && porServicio.monto) {
+                tasaEspecial = Number(porServicio.monto);
+              }
+            } catch (e) {
+              console.warn(`API /api/facturacion/generar-facturas: precios_especiales_por_servicio inválido para propiedad ${propiedad.id}`, e);
             }
           }
+          if (tasaEspecial !== null && !isNaN(tasaEspecial)) {
+            precioUnitario = tasaEspecial;
+            usarArea = true;
+          }
+
+          // Log diagnóstico
+          console.log(`API /api/facturacion/generar-facturas: Config (${origenConfig}) aplicada prop ${propiedad.id}, cliente ${clienteId}, servicio ${servicio.codigo}: IVA=${porcentajeIva}, tasaEspecial=${tasaEspecial ?? 'N/A'}`);
         }
         
         // Si es alícuota, usar el monto específico de la propiedad si está configurado
