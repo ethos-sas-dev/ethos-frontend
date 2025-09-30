@@ -969,60 +969,119 @@ export default function ReportesPage() {
       </div>
 
       {/* Filtros */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="relative">
-          <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-            <MagnifyingGlassIcon className="h-4 w-4 text-gray-400" />
+      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="relative">
+            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+              <MagnifyingGlassIcon className="h-4 w-4 text-gray-400" />
+            </div>
+            <Input
+              type="text"
+              placeholder="Buscar por identificador, propietario o proyecto..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
+            />
           </div>
-          <Input
-            type="text"
-            placeholder="Buscar por identificador, propietario o proyecto..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
-        </div>
 
-        <div className="flex items-center gap-2">
-          <FunnelIcon className="h-4 w-4 text-gray-500" />
-          <Select
-            value={proyectoFiltro}
-            onValueChange={setProyectoFiltro}
-          >
-            <SelectTrigger className="flex-grow">
-              <SelectValue placeholder="Filtrar por Proyecto" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos">Todos los Proyectos</SelectItem>
-              {proyectos.map(proyecto => (
-                <SelectItem key={proyecto.id} value={proyecto.id.toString()}>
-                  {proyecto.nombre}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+          <div>
+            <Select
+              value={proyectoFiltro}
+              onValueChange={setProyectoFiltro}
+            >
+              <SelectTrigger className="border-gray-300 focus:border-emerald-500 focus:ring-emerald-500">
+                <SelectValue placeholder="Filtrar por Proyecto" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos los Proyectos</SelectItem>
+                {proyectos.map(proyecto => (
+                  <SelectItem key={proyecto.id} value={proyecto.id.toString()}>
+                    {proyecto.nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-        <div className="flex items-center gap-2">
-          <FunnelIcon className="h-4 w-4 text-gray-500" />
-          <Select
-            value={estadoDocumentacionFiltro}
-            onValueChange={setEstadoDocumentacionFiltro}
-          >
-            <SelectTrigger className="flex-grow">
-              <SelectValue placeholder="Filtrar por Estado" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos">Todos los Estados</SelectItem>
-              <SelectItem value="completos">Documentación Completa</SelectItem>
-              <SelectItem value="incompletos">Documentación Incompleta</SelectItem>
-            </SelectContent>
-          </Select>
+          <div>
+            <Select
+              value={estadoDocumentacionFiltro}
+              onValueChange={setEstadoDocumentacionFiltro}
+            >
+              <SelectTrigger className="border-gray-300 focus:border-emerald-500 focus:ring-emerald-500">
+                <SelectValue placeholder="Filtrar por Estado" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos los Estados</SelectItem>
+                <SelectItem value="completos">Documentación Completa</SelectItem>
+                <SelectItem value="incompletos">Documentación Incompleta</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsContent value="documentacion">
+          {/* Estadísticas por Proyecto */}
+          {!isLoading && proyectos.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
+              {proyectos.map(proyecto => {
+                const propiedadesProyecto = propiedades.filter(p => p.proyecto_id === proyecto.id);
+                const totalPropiedades = propiedadesProyecto.length;
+                
+                if (totalPropiedades === 0) return null;
+                
+                const documentacionCompleta = propiedadesProyecto.filter(p => {
+                  const docStatus = calcularPorcentajeDocumentacion(p);
+                  return docStatus.porcentaje === 100;
+                }).length;
+                
+                const porcentajeProyecto = Math.round((documentacionCompleta / totalPropiedades) * 100);
+                
+                return (
+                  <div key={proyecto.id} className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm hover:shadow-md hover:border-gray-300 transition-all duration-300">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="p-3 bg-emerald-100 rounded-xl">
+                        <BuildingOffice2Icon className="w-6 h-6 text-emerald-600" />
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-gray-900">
+                          {porcentajeProyecto}%
+                        </p>
+                        <div className="w-8 h-1 bg-emerald-400 rounded-full ml-auto mt-1"></div>
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide truncate">
+                        {proyecto.nombre}
+                      </h3>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {documentacionCompleta}/{totalPropiedades} propiedades completas
+                      </p>
+                      <div className="mt-2">
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div 
+                            className={`h-2 rounded-full transition-all duration-300 ${
+                              porcentajeProyecto === 100 
+                                ? 'bg-green-500' 
+                                : porcentajeProyecto >= 75 
+                                ? 'bg-emerald-500' 
+                                : porcentajeProyecto >= 50 
+                                ? 'bg-yellow-500' 
+                                : 'bg-red-500'
+                            }`}
+                            style={{ width: `${porcentajeProyecto}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           <div className="flex items-center justify-between mb-4">
             {!isLoading && (
               <div className="text-sm text-gray-600">

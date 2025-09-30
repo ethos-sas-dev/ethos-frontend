@@ -43,7 +43,7 @@ export default function Sidebar({
     <motion.aside 
       initial={false}
       animate={{ 
-        width: isCollapsed ? 80 : 294 
+        width: isCollapsed ? 80 : 280 
       }}
       transition={{ duration: 0.3, ease: "easeInOut" }}
       className="fixed h-screen backdrop-blur-sm bg-gradient-to-br from-[#05703f] via-[#024728] to-[#01231a] text-white shadow-2xl border-r border-white/5"

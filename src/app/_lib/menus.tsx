@@ -1,6 +1,5 @@
 import { MenuItems, UserRole } from './types'
 import { 
-  HomeIcon, 
   BuildingOffice2Icon,
   UserGroupIcon,
   DocumentTextIcon,
@@ -16,11 +15,6 @@ import { UserCircle } from "lucide-react"
 // Configuración de menús específicos por rol
 export const menuItems: Record<UserRole, MenuItems['items']> = {
   'Jefe Operativo': [
-    {
-      title: "Inicio",
-      icon: HomeIcon,
-      href: "/dashboard"
-    },
     {
       title: "Proyectos",
       icon: BuildingOffice2Icon,
@@ -38,11 +32,6 @@ export const menuItems: Record<UserRole, MenuItems['items']> = {
     }
   ],
   'Administrador': [
-    {
-      title: "Inicio",
-      icon: HomeIcon,
-      href: "/dashboard"
-    },
     {
       title: "Proyectos",
       icon: BuildingOffice2Icon,
@@ -81,11 +70,6 @@ export const menuItems: Record<UserRole, MenuItems['items']> = {
   ],
   'Directorio': [
     {
-      title: "Inicio",
-      icon: HomeIcon,
-      href: "/dashboard"
-    },
-    {
       title: "Proyectos",
       icon: BuildingOffice2Icon,
       href: "/dashboard/proyectos"
@@ -118,11 +102,6 @@ export const menuItems: Record<UserRole, MenuItems['items']> = {
   ],
   'Propietario': [
     {
-      title: "Inicio",
-      icon: HomeIcon,
-      href: "/dashboard"
-    },
-    {
       title: "Mis Propiedades",
       icon: BuildingOffice2Icon,
       href: "/dashboard/mis-propiedades"
@@ -154,11 +133,6 @@ export const menuItems: Record<UserRole, MenuItems['items']> = {
     }
   ],
   'Arrendatario': [
-    {
-      title: "Inicio",
-      icon: HomeIcon,
-      href: "/dashboard"
-    },
     {
       title: "Mi Alquiler",
       icon: BuildingOffice2Icon,

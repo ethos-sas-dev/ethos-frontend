@@ -263,6 +263,8 @@ export async function POST(request: Request) {
         let configuracionEspecifica: any = null;
         let origenConfig: 'por_servicio' | 'generica' | 'ninguna' = 'ninguna';
 
+        console.log(`API /api/facturacion/generar-facturas: Buscando configuración para propiedad ${propiedad.id}, cliente ${clienteId}, servicio ${servicioId}`);
+
         // Intento 1: por servicio_id (si la columna existe en la BD)
         try {
           const { data: confSrv, error: errSrv } = await supabaseAdmin
@@ -273,17 +275,22 @@ export async function POST(request: Request) {
             .eq('servicio_id', servicioId)
             .eq('activo', true)
             .maybeSingle();
+          
+          console.log(`API /api/facturacion/generar-facturas: Búsqueda por servicio_id resultado:`, { confSrv, errSrv });
+          
           if (errSrv && errSrv.code && errSrv.code !== 'PGRST116') {
             // Si es error de columna inexistente, ignorar; otros errores detener
             if (errSrv.details?.includes('servicio_id') || (errSrv.message && errSrv.message.toLowerCase().includes('servicio_id'))) {
               console.warn('API /api/facturacion/generar-facturas: columna servicio_id no existe en configuraciones_facturacion, se usará fallback genérico');
             } else {
+              console.error('API /api/facturacion/generar-facturas: Error inesperado buscando configuración por servicio_id:', errSrv);
               throw errSrv;
             }
           }
           if (confSrv) {
             configuracionEspecifica = confSrv;
             origenConfig = 'por_servicio';
+            console.log(`API /api/facturacion/generar-facturas: ✅ Configuración específica por servicio encontrada:`, confSrv);
           }
         } catch (e) {
           console.warn('API /api/facturacion/generar-facturas: error consultando configuración por servicio_id, usando fallback genérico', e);
@@ -291,6 +298,7 @@ export async function POST(request: Request) {
 
         // Intento 2: genérica activa para propiedad+cliente
         if (!configuracionEspecifica) {
+          console.log(`API /api/facturacion/generar-facturas: No se encontró configuración específica, buscando genérica...`);
           const { data: confGen, error: errGen } = await supabaseAdmin
             .from('configuraciones_facturacion')
             .select('*')
@@ -298,12 +306,18 @@ export async function POST(request: Request) {
             .eq('cliente_id', clienteId)
             .eq('activo', true)
             .maybeSingle();
+          
+          console.log(`API /api/facturacion/generar-facturas: Búsqueda genérica resultado:`, { confGen, errGen });
+          
           if (errGen && errGen.code !== 'PGRST116') {
             throw new Error(`Error al buscar configuración de facturación: ${errGen.message}`);
           }
           if (confGen) {
             configuracionEspecifica = confGen;
             origenConfig = 'generica';
+            console.log(`API /api/facturacion/generar-facturas: ✅ Configuración genérica encontrada:`, confGen);
+          } else {
+            console.log(`API /api/facturacion/generar-facturas: ❌ No se encontró ninguna configuración`);
           }
         }
         
@@ -345,11 +359,16 @@ export async function POST(request: Request) {
           console.log(`API /api/facturacion/generar-facturas: Config (${origenConfig}) aplicada prop ${propiedad.id}, cliente ${clienteId}, servicio ${servicio.codigo}: IVA=${porcentajeIva}, tasaEspecial=${tasaEspecial ?? 'N/A'}`);
         }
         
-        // Si es alícuota, usar el monto específico de la propiedad si está configurado
-        if (servicio.codigo === 'AOA3' && propiedad.monto_alicuota_ordinaria) {
-          precioUnitario = propiedad.monto_alicuota_ordinaria;
-          usarArea = false; // No multiplicar por área si ya tenemos monto específico
-        }
+        // AOA3: si hay configuración especial con tasa_base_especial ya aplicada, NO sobre-escribirla.
+        // Solo usar monto_alicuota_ordinaria cuando NO existe una configuración específica con una tasa especial.
+        // if (
+        //   servicio.codigo === 'AOA3' &&
+        //   propiedad.monto_alicuota_ordinaria &&
+        //   (!configuracionEspecifica || configuracionEspecifica.tasa_base_especial === null)
+        // ) {
+        //   precioUnitario = propiedad.monto_alicuota_ordinaria;
+        //   usarArea = false; // No multiplicar por área si ya tenemos monto específico
+        // }
         
         // Calcular base imponible
         let baseImponible = 0;
@@ -358,8 +377,8 @@ export async function POST(request: Request) {
             resultados.omitidas++;
             continue; // No se puede facturar sin área si es por m2
           }
-          baseImponible = precioUnitario * area;
-          precioUnitario = baseImponible; // Ajustar precio unitario
+          cantidad = area; // La cantidad en items_factura debe reflejar el área
+          baseImponible = precioUnitario * cantidad;
         } else {
           baseImponible = precioUnitario * cantidad;
         }

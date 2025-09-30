@@ -3,6 +3,7 @@
 import { useAuth } from "../_lib/auth/AuthContext"
 import { useState, useEffect } from "react"
 import { UserRole } from "../_lib/types"
+import { useRouter } from "next/navigation"
 import StatCard from "../_components/ui/dashboard/StatCard"
 import ActionCard from "../_components/ui/dashboard/ActionCard"
 import { createClient } from '../../../lib/supabase/client'
@@ -505,6 +506,18 @@ const dashboardContents: Record<UserRole, React.FC> = {
 
 export default function DashboardPage() {
   const { user, role, isLoading: isAuthLoading } = useAuth()
+  const router = useRouter()
+  
+  // Redirigir automáticamente a proyectos para roles operativos
+  useEffect(() => {
+    if (!isAuthLoading && role && user) {
+      if (role === 'Jefe Operativo' || role === 'Administrador' || role === 'Directorio') {
+        router.replace('/dashboard/proyectos')
+      } else if (role === 'Propietario' || role === 'Arrendatario') {
+        router.replace('/dashboard/mis-propiedades')
+      }
+    }
+  }, [role, user, isAuthLoading, router])
   
   if (isAuthLoading) {
     return <LoadingSpinner /> 
@@ -520,17 +533,6 @@ export default function DashboardPage() {
     ) 
   }
   
-  const DashboardContent = dashboardContents[role]
-  
-  if (!DashboardContent) {
-     return (
-      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
-        <div className="text-center">
-          <p className="text-gray-500">No se encontró un dashboard para el rol de usuario: {role}</p>
-        </div>
-      </div>
-    )
-  }
-  
-  return <DashboardContent />
+  // Mientras se hace la redirección, mostrar loading
+  return <LoadingSpinner />
 } 

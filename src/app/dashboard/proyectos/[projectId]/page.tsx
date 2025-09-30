@@ -107,6 +107,16 @@ export default function ProjectDetailPage() {
     const [isSearching, setIsSearching] = useState(false); // Added state for search loading indication
     const [error, setError] = useState<string | null>(null);
     const [menuOpen, setMenuOpen] = useState(false);
+    
+    // Estados para estadísticas del proyecto
+    const [projectStats, setProjectStats] = useState<{
+        totalProperties: number;
+        servicios: Array<{
+            codigo: string;
+            nombre: string;
+            precio_base: number;
+        }>;
+    } | null>(null);
 
     // Search State
     const [searchTerm, setSearchTerm] = useState("");
@@ -165,6 +175,51 @@ export default function ProjectDetailPage() {
 
         fetchProjectDetails();
     }, [projectId, supabase, role, isAuthLoading, router]);
+
+    // Fetch Project Stats and Services
+    useEffect(() => {
+        if (!project || !supabase) return;
+        
+        const fetchProjectStats = async () => {
+            try {
+                // Contar propiedades del proyecto
+                const { count: totalProperties } = await supabase
+                    .from('propiedades')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('proyecto_id', projectId);
+
+                // Determinar servicios según nombre del proyecto
+                let serviciosCodigos: string[] = [];
+                const nombreProyecto = project.nombre.toLowerCase();
+                
+                if (nombreProyecto.includes('almax 3')) {
+                    serviciosCodigos = ['AOA3'];
+                } else if (nombreProyecto.includes('almax 2')) {
+                    serviciosCodigos = ['CMA2', 'APA2'];
+                } else if (nombreProyecto.includes('center')) {
+                    serviciosCodigos = ['AOACL', 'AOACO', 'APAC'];
+                }
+
+                // Obtener datos de servicios
+                const { data: servicios, error: serviciosError } = await supabase
+                    .from('servicios')
+                    .select('codigo, nombre, precio_base')
+                    .in('codigo', serviciosCodigos);
+
+                if (serviciosError) throw serviciosError;
+
+                setProjectStats({
+                    totalProperties: totalProperties || 0,
+                    servicios: servicios || []
+                });
+
+            } catch (err: any) {
+                console.error("Error fetching project stats:", err);
+            }
+        };
+        
+        fetchProjectStats();
+    }, [project, projectId, supabase]);
 
     // Fetch Properties (Paginated and Searchable using RPC)
     const fetchProperties = useCallback(async (pageNum: number, currentSearchTerm: string) => {
@@ -367,6 +422,80 @@ export default function ProjectDetailPage() {
                      </div>
                  )}
             </div>
+
+            {/* Project Statistics Cards */}
+            {projectStats && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {/* Total Properties Card */}
+                    <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm hover:shadow-md hover:border-gray-300 transition-all duration-300">
+                        <div className="flex items-start justify-between mb-4">
+                            <div className="p-3 bg-emerald-100 rounded-xl">
+                                <BuildingOffice2Icon className="w-6 h-6 text-emerald-600" />
+                            </div>
+                            <div className="text-right">
+                                <p className="text-3xl font-bold text-gray-900">
+                                    {projectStats.totalProperties}
+                                </p>
+                                <div className="w-8 h-1 bg-emerald-400 rounded-full ml-auto mt-1"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                                Total Propiedades
+                            </h3>
+                            <p className="text-xs text-gray-500 mt-1">En este proyecto</p>
+                        </div>
+                    </div>
+
+                    {/* Services Cards */}
+                    {projectStats.servicios.map((servicio) => {
+                        // Limpiar nombre del servicio removiendo el nombre del proyecto
+                        let nombreLimpio = servicio.nombre;
+                        const nombreProyecto = project.nombre;
+                        
+                        // Remover variaciones del nombre del proyecto
+                        const variaciones = [
+                            nombreProyecto,
+                            'Almax 3',
+                            'Almax 2', 
+                            'Almax Center',
+                            'Almax Center -',
+                            'Almax Center - '
+                        ];
+                        
+                        variaciones.forEach(variacion => {
+                            nombreLimpio = nombreLimpio.replace(new RegExp(variacion, 'gi'), '').trim();
+                        });
+                        
+                        // Limpiar guiones y espacios extra
+                        nombreLimpio = nombreLimpio.replace(/^[-\s]+|[-\s]+$/g, '').trim();
+                        
+                        return (
+                        <div key={servicio.codigo} className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm hover:shadow-md hover:border-gray-300 transition-all duration-300">
+                            <div className="flex items-start justify-between mb-4">
+                                <div className="p-2 bg-emerald-100 rounded-xl">
+                                    <span className="text-sm font-bold text-emerald-600">
+                                        {servicio.codigo}
+                                    </span>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-2xl font-bold text-gray-900">
+                                        ${servicio.precio_base.toFixed(2)}
+                                    </p>
+                                    <div className="w-8 h-1 bg-emerald-400 rounded-full ml-auto mt-1"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                                    {nombreLimpio}
+                                </h3>
+                                <p className="text-xs text-gray-500 mt-1">Tasa base por m²</p>
+                            </div>
+                        </div>
+                        );
+                    })}
+                </div>
+            )}
 
             {/* Properties Section */}
             <div className="space-y-6">

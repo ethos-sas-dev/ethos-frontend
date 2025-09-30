@@ -11,6 +11,7 @@ import {
     DropdownMenuTrigger,
 } from "../../../../../_components/ui/dropdown-menu"; // Reverted to original path, maybe it exists
 import { formatNumber } from "../../../../../../lib/utils"; // Corrected path
+import { fetchValorServicio } from "../../../../../_utils/facturacionHelpers";
 import {
     ArrowLeftIcon,
     UserPlusIcon,
@@ -310,6 +311,9 @@ export default function PropertyDetailPage() {
     const [missingTenantDocs, setMissingTenantDocs] = useState(0);
     const [showDeleteModal, setShowDeleteModal] = useState(false); // Estado para controlar el modal de confirmación
     const [isDeleting, setIsDeleting] = useState(false); // Estado para rastrear si se está eliminando
+    // Valores calculados de servicios
+    const [valorAlicuota, setValorAlicuota] = useState<number | null>(null);
+    const [valorParqueo, setValorParqueo] = useState<number | null>(null);
 
     const projectId = params.projectId as string;
     const propertyId = params.propertyId as string;
@@ -468,6 +472,37 @@ export default function PropertyDetailPage() {
         }
         // If loading is still true, do nothing and wait for next render
     }, [propertyId, authLoading, user, fetchPropertyDetails]); // Dependencies: trigger fetch when these change
+
+    // Cargar valores de servicios cuando la propiedad se haya cargado
+    useEffect(() => {
+      if (!property) return;
+
+      async function cargarValores() {
+        try {
+          // Determinar código de servicio de alícuota según identificador / proyecto
+          let codigoServicio = "AOA3"; // default Alícuota ordinaria Almax 3
+          const nombreProyecto = property?.proyecto?.nombre?.toLowerCase() || "";
+          if (nombreProyecto.includes("almax 2")) {
+            codigoServicio = "CMA2"; // Cuota de Mantenimiento Almax 2
+          } else if (nombreProyecto.includes("center")) {
+            const idents = JSON.stringify(property?.identificadores ?? {}).toLowerCase();
+            if (idents.includes("oficina")) codigoServicio = "AOACO";
+            else if (idents.includes("local")) codigoServicio = "AOACL";
+          }
+
+          const alic = await fetchValorServicio(property, codigoServicio);
+          setValorAlicuota(alic.total);
+
+          // Parqueo (APAC)
+          const parqueo = await fetchValorServicio(property, "APAC");
+          setValorParqueo(parqueo.total);
+        } catch (e) {
+          console.error("Error cargando valores de servicios:", e);
+        }
+      }
+
+      cargarValores();
+    }, [property]);
 
     // --- Upload Handler ---
     const handleUploadComplete = async (
@@ -1083,9 +1118,15 @@ export default function PropertyDetailPage() {
                                  <p className="text-lg font-semibold">${formatNumber(property.monto_fondo_inicial ?? 0, true)}</p>
                              </div>
                              <div className="bg-gray-50 rounded-lg p-3">
-                                <p className="text-xs text-gray-500 mb-0.5">Alícuota Ordinaria (Ref.)</p>
-                                <p className="text-lg font-semibold">${formatNumber(property.monto_alicuota_ordinaria ?? 0, true)}</p>
+                                <p className="text-xs text-gray-500 mb-0.5">{property?.proyecto?.nombre?.toLowerCase().includes("almax 2") ? "Cuota de Mantenimiento (Ref.)" : "Alícuota Ordinaria (Ref.)"}</p>
+                                <p className="text-lg font-semibold">${formatNumber(valorAlicuota ?? property.monto_alicuota_ordinaria ?? 0, true)}</p>
                              </div>
+                             {valorParqueo !== null && valorParqueo !== 0 && (
+                               <div className="bg-gray-50 rounded-lg p-3">
+                                  <p className="text-xs text-gray-500 mb-0.5">Parqueo (Ref.)</p>
+                                  <p className="text-lg font-semibold">${formatNumber(valorParqueo, true)}</p>
+                               </div>
+                             )}
                              {/* Add other payment info if needed */}
                              <div className="sm:col-span-2 border-t pt-4 mt-4">
                                  <p className="text-sm text-gray-500 flex items-center">
