@@ -9,11 +9,11 @@ const auth = (req: Request) => ({ id: "fakeUserId" }); // Fake auth - !!! REPLAC
 export const ourFileRouter = {
   propertyDocument: f({
     pdf: {
-      maxFileSize: "4MB",
+      maxFileSize: "32MB",
       maxFileCount: 1,
     },
     image: {
-      maxFileSize: "4MB",
+      maxFileSize: "32MB",
       maxFileCount: 1,
     },
   })
@@ -78,7 +78,7 @@ export const ourFileRouter = {
 
   // >>> AÑADIR NUEVO ENDPOINT PARA DOCUMENTOS DE CLIENTE <<<
   clientDocument: f({
-    pdf: { maxFileSize: "4MB", maxFileCount: 1 },
+    pdf: { maxFileSize: "32MB", maxFileCount: 1 },
     // Podrías añadir otros tipos si es necesario (jpg, png, etc.)
     // image: { maxFileSize: "4MB", maxFileCount: 1 }, 
   })
@@ -107,8 +107,8 @@ export const ourFileRouter = {
 
   // Endpoint para comprobantes de pago
   paymentProof: f({
-    pdf: { maxFileSize: "4MB", maxFileCount: 1 },
-    image: { maxFileSize: "4MB", maxFileCount: 1 }, // Permitir imágenes o PDFs
+    pdf: { maxFileSize: "32MB", maxFileCount: 1 },
+    image: { maxFileSize: "32MB", maxFileCount: 1 }, // Permitir imágenes o PDFs
   })
     .middleware(async ({ req }) => {
       const user = await auth(req);
@@ -137,7 +137,7 @@ export const ourFileRouter = {
   // >>> NUEVO ENDPOINT PARA IMÁGENES DE PROYECTO <<<
   projectImage: f({
     image: { 
-      maxFileSize: "4MB", 
+      maxFileSize: "32MB", 
       maxFileCount: 1 
     }
   })
