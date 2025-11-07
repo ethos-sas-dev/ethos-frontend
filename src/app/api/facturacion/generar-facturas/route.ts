@@ -237,6 +237,16 @@ export async function POST(request: Request) {
             clienteId = propiedad.ocupante_id as number;
             clienteData = propiedad.ocupante;
             console.log(`API /api/facturacion/generar-facturas: Facturando al arrendatario - ID: ${clienteId}`);
+          } else if (propiedad.encargado_pago === 'Arrendatario' && (!propiedad.ocupante || propiedad.ocupante_externo)) {
+            // Fallback: Si encargado_pago es Arrendatario pero no hay ocupante válido, facturar al propietario
+            console.log(`API /api/facturacion/generar-facturas: WARNING - encargado_pago=Arrendatario pero sin ocupante válido para propiedad ID ${propiedad.id}`);
+            console.log(`API /api/facturacion/generar-facturas: - tiene ocupante: ${!!propiedad.ocupante}`);
+            console.log(`API /api/facturacion/generar-facturas: - ocupante_externo: ${propiedad.ocupante_externo}`);
+            console.log(`API /api/facturacion/generar-facturas: Usando fallback: facturando al propietario`);
+            if (propiedad.propietario) {
+              clienteId = propiedad.propietario_id as number;
+              clienteData = propiedad.propietario;
+            }
           } else {
             console.log(`API /api/facturacion/generar-facturas: PROBLEMA - No se pudo determinar cliente para propiedad ID ${propiedad.id}`);
             console.log(`API /api/facturacion/generar-facturas: - encargado_pago: ${propiedad.encargado_pago}`);
