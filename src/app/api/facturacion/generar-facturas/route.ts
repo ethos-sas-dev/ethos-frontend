@@ -360,28 +360,43 @@ export async function POST(request: Request) {
           console.log(`API /api/facturacion/generar-facturas: Config (${origenConfig}) aplicada prop ${propiedad.id}, cliente ${clienteId}, servicio ${servicio.codigo}: IVA=${porcentajeIva}, tasaEspecial=${tasaEspecial ?? 'N/A'}`);
         }
         
-        // AOA3: si hay configuración especial con tasa_base_especial ya aplicada, NO sobre-escribirla.
-        // Solo usar monto_alicuota_ordinaria cuando NO existe una configuración específica con una tasa especial.
-        // if (
-        //   servicio.codigo === 'AOA3' &&
-        //   propiedad.monto_alicuota_ordinaria &&
-        //   (!configuracionEspecifica || configuracionEspecifica.tasa_base_especial === null)
-        // ) {
-        //   precioUnitario = propiedad.monto_alicuota_ordinaria;
-        //   usarArea = false; // No multiplicar por área si ya tenemos monto específico
-        // }
+        // MACROLOTES: Si es un macrolote, usar directamente monto_alicuota_ordinaria (ya está calculado)
+        // Los macrolotes tienen el Total Alícuota pre-calculado y NO se debe recalcular
+        const esMacrolote = propiedad.identificadores?.inferior === 'Macrolote';
         
         // Calcular base imponible
         let baseImponible = 0;
-        if (usarArea) {
-          if (area <= 0) {
-            resultados.omitidas++;
-            continue; // No se puede facturar sin área si es por m2
+        
+        if (esMacrolote && propiedad.monto_alicuota_ordinaria) {
+          // Para macrolotes, usar directamente el monto_alicuota_ordinaria (Total Alícuota)
+          baseImponible = Number(propiedad.monto_alicuota_ordinaria);
+          usarArea = false; // No multiplicar por área, ya es el total
+          cantidad = 1; // Cantidad fija para macrolotes
+          console.log(`API /api/facturacion/generar-facturas: Macrolote detectado - usando monto_alicuota_ordinaria: $${baseImponible}`);
+          
+          // Para macrolotes, asegurar que el IVA se maneje según configuración
+          // Si hay configuración con aplica_iva_general = false, respetarla
+          if (configuracionEspecifica && configuracionEspecifica.aplica_iva_general !== null) {
+            porcentajeIva = configuracionEspecifica.aplica_iva_general ? 
+              (configuracionEspecifica.porcentaje_iva_general || 0) : 0;
+            if (porcentajeIva > 1) porcentajeIva = porcentajeIva / 100;
+          } else {
+            // Si no hay configuración explícita para macrolote, no aplicar IVA por defecto
+            porcentajeIva = 0;
+            console.log(`API /api/facturacion/generar-facturas: Macrolote sin configuración de IVA - estableciendo IVA = 0`);
           }
-          cantidad = area; // La cantidad en items_factura debe reflejar el área
-          baseImponible = precioUnitario * cantidad;
         } else {
-          baseImponible = precioUnitario * cantidad;
+          // Lógica normal para propiedades que no son macrolotes
+          if (usarArea) {
+            if (area <= 0) {
+              resultados.omitidas++;
+              continue; // No se puede facturar sin área si es por m2
+            }
+            cantidad = area; // La cantidad en items_factura debe reflejar el área
+            baseImponible = precioUnitario * cantidad;
+          } else {
+            baseImponible = precioUnitario * cantidad;
+          }
         }
         
         // Redondear a 2 decimales
