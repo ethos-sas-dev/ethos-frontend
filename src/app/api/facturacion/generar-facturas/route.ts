@@ -259,7 +259,11 @@ export async function POST(request: Request) {
         let area = obtenerAreaParaCalculo(propiedad, servicio.codigo);
         let porcentajeIva = servicio.porcentaje_iva_defecto || 0;
         
+        // MACROLOTES: Detectar temprano para saltarse lógica de tasas
+        const esMacrolote = propiedad.identificadores?.inferior === 'Macrolote';
+        
         // Buscar configuración específica: 1) intentar por servicio_id; 2) fallback genérico
+        // Para macrolotes, solo buscamos configuración para IVA, no para tasas
         let configuracionEspecifica: any = null;
         let origenConfig: 'por_servicio' | 'generica' | 'ninguna' = 'ninguna';
 
@@ -331,38 +335,37 @@ export async function POST(request: Request) {
             if (porcentajeIva > 1) porcentajeIva = porcentajeIva / 100;
           }
 
-          // 2) Tasa especial. Dos fuentes:
-          //   a) Campo tasa_base_especial general
-          //   b) precios_especiales_por_servicio[codigoServicio] si existe
-          let tasaEspecial: number | null = null;
-          if (configuracionEspecifica.tasa_base_especial !== null && configuracionEspecifica.tasa_base_especial !== undefined) {
-            tasaEspecial = Number(configuracionEspecifica.tasa_base_especial);
-          }
-          if (!tasaEspecial && configuracionEspecifica.precios_especiales_por_servicio) {
-            try {
-              const mapa = configuracionEspecifica.precios_especiales_por_servicio as Record<string, any>;
-              const porServicio = mapa?.[servicio.codigo];
-              if (porServicio && typeof porServicio === 'number') {
-                tasaEspecial = porServicio;
-              } else if (porServicio && typeof porServicio === 'object' && porServicio.monto) {
-                tasaEspecial = Number(porServicio.monto);
-              }
-            } catch (e) {
-              console.warn(`API /api/facturacion/generar-facturas: precios_especiales_por_servicio inválido para propiedad ${propiedad.id}`, e);
+          // 2) Tasa especial. Solo aplicar si NO es macrolote (los macrolotes usan monto_alicuota_ordinaria directamente)
+          if (!esMacrolote) {
+            let tasaEspecial: number | null = null;
+            if (configuracionEspecifica.tasa_base_especial !== null && configuracionEspecifica.tasa_base_especial !== undefined) {
+              tasaEspecial = Number(configuracionEspecifica.tasa_base_especial);
             }
-          }
-          if (tasaEspecial !== null && !isNaN(tasaEspecial)) {
-            precioUnitario = tasaEspecial;
-            usarArea = true;
+            if (!tasaEspecial && configuracionEspecifica.precios_especiales_por_servicio) {
+              try {
+                const mapa = configuracionEspecifica.precios_especiales_por_servicio as Record<string, any>;
+                const porServicio = mapa?.[servicio.codigo];
+                if (porServicio && typeof porServicio === 'number') {
+                  tasaEspecial = porServicio;
+                } else if (porServicio && typeof porServicio === 'object' && porServicio.monto) {
+                  tasaEspecial = Number(porServicio.monto);
+                }
+              } catch (e) {
+                console.warn(`API /api/facturacion/generar-facturas: precios_especiales_por_servicio inválido para propiedad ${propiedad.id}`, e);
+              }
+            }
+            if (tasaEspecial !== null && !isNaN(tasaEspecial)) {
+              precioUnitario = tasaEspecial;
+              usarArea = true;
+            }
           }
 
           // Log diagnóstico
-          console.log(`API /api/facturacion/generar-facturas: Config (${origenConfig}) aplicada prop ${propiedad.id}, cliente ${clienteId}, servicio ${servicio.codigo}: IVA=${porcentajeIva}, tasaEspecial=${tasaEspecial ?? 'N/A'}`);
+          console.log(`API /api/facturacion/generar-facturas: Config (${origenConfig}) aplicada prop ${propiedad.id}, cliente ${clienteId}, servicio ${servicio.codigo}: IVA=${porcentajeIva}, ${esMacrolote ? 'Macrolote - usando monto_alicuota_ordinaria' : `tasaEspecial=${configuracionEspecifica.tasa_base_especial ?? 'N/A'}`}`);
         }
         
         // MACROLOTES: Si es un macrolote, usar directamente monto_alicuota_ordinaria (ya está calculado)
         // Los macrolotes tienen el Total Alícuota pre-calculado y NO se debe recalcular
-        const esMacrolote = propiedad.identificadores?.inferior === 'Macrolote';
         
         // Calcular base imponible
         let baseImponible = 0;
@@ -372,6 +375,7 @@ export async function POST(request: Request) {
           baseImponible = Number(propiedad.monto_alicuota_ordinaria);
           usarArea = false; // No multiplicar por área, ya es el total
           cantidad = 1; // Cantidad fija para macrolotes
+          precioUnitario = baseImponible; // Para macrolotes, precioUnitario = monto total
           console.log(`API /api/facturacion/generar-facturas: Macrolote detectado - usando monto_alicuota_ordinaria: $${baseImponible}`);
           
           // Para macrolotes, asegurar que el IVA se maneje según configuración
