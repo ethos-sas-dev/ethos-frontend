@@ -371,12 +371,32 @@ export async function POST(request: Request) {
         let baseImponible = 0;
         
         if (esMacrolote && propiedad.monto_alicuota_ordinaria) {
-          // Para macrolotes, usar directamente el monto_alicuota_ordinaria (Total Alícuota)
-          baseImponible = Number(propiedad.monto_alicuota_ordinaria);
-          usarArea = false; // No multiplicar por área, ya es el total
-          cantidad = 1; // Cantidad fija para macrolotes
-          precioUnitario = baseImponible; // Para macrolotes, precioUnitario = monto total
-          console.log(`API /api/facturacion/generar-facturas: Macrolote detectado - usando monto_alicuota_ordinaria: $${baseImponible}`);
+          // Para macrolotes, calcular: METRAJE × VALOR UNITARIO
+          // El VALOR UNITARIO viene de tasa_base_especial en la configuración
+          // Si no hay tasa_base_especial, usar monto_alicuota_ordinaria directamente
+          
+          let valorUnitarioMacrolote: number | null = null;
+          
+          // Buscar tasa_base_especial en la configuración (este es el VALOR UNITARIO)
+          if (configuracionEspecifica && configuracionEspecifica.tasa_base_especial !== null && configuracionEspecifica.tasa_base_especial !== undefined) {
+            valorUnitarioMacrolote = Number(configuracionEspecifica.tasa_base_especial);
+          }
+          
+          if (valorUnitarioMacrolote !== null && area > 0) {
+            // Calcular: METRAJE × VALOR UNITARIO
+            baseImponible = area * valorUnitarioMacrolote;
+            usarArea = false; // Ya calculamos con el área
+            cantidad = 1;
+            precioUnitario = valorUnitarioMacrolote; // Mostrar el valor unitario en la factura
+            console.log(`API /api/facturacion/generar-facturas: Macrolote detectado - calculando: ${area} m² × $${valorUnitarioMacrolote} = $${baseImponible}`);
+          } else {
+            // Fallback: usar monto_alicuota_ordinaria directamente si no hay tasa_base_especial
+            baseImponible = Number(propiedad.monto_alicuota_ordinaria);
+            usarArea = false;
+            cantidad = 1;
+            precioUnitario = baseImponible;
+            console.log(`API /api/facturacion/generar-facturas: Macrolote detectado - usando monto_alicuota_ordinaria directamente: $${baseImponible} (sin tasa_base_especial)`);
+          }
           
           // Para macrolotes, asegurar que el IVA se maneje según configuración
           // Si hay configuración con aplica_iva_general = false, respetarla
