@@ -296,7 +296,7 @@ export async function POST(request: Request) {
           console.warn('API /api/facturacion/generar-facturas: error consultando configuración por servicio_id, usando fallback genérico', e);
         }
 
-        // Intento 2: genérica activa para propiedad+cliente
+        // Intento 2: genérica activa para propiedad+cliente (solo si no tiene servicio_id o tiene servicio_id NULL)
         if (!configuracionEspecifica) {
           console.log(`API /api/facturacion/generar-facturas: No se encontró configuración específica, buscando genérica...`);
           const { data: confGen, error: errGen } = await supabaseAdmin
@@ -305,6 +305,7 @@ export async function POST(request: Request) {
             .eq('propiedad_id', propiedad.id)
             .eq('cliente_id', clienteId)
             .eq('activo', true)
+            .is('servicio_id', null)  // Solo configuraciones genéricas (sin servicio_id)
             .maybeSingle();
           
           console.log(`API /api/facturacion/generar-facturas: Búsqueda genérica resultado:`, { confGen, errGen });

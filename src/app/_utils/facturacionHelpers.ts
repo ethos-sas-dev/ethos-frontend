@@ -134,9 +134,26 @@ export async function fetchValorServicio(
     .single();
   if (srvErr || !servicio) throw srvErr || new Error("Servicio no encontrado");
 
-  // 2. Obtener configuración especial (si existe) usando propietario como cliente por defecto
-  const clienteId = propiedad.propietario_id;
-  const { data: config } = await supabase
+  // 2. Obtener configuración especial (si existe) usando el cliente correcto según encargado_pago
+  // Determinar el cliente a facturar según encargado_pago (igual que en generar-facturas)
+  let clienteId: number | null = null;
+  if (propiedad.encargado_pago === 'Propietario' && propiedad.propietario_id) {
+    clienteId = propiedad.propietario_id;
+  } else if (propiedad.encargado_pago === 'Arrendatario' && propiedad.ocupante_id && !propiedad.ocupante_externo) {
+    clienteId = propiedad.ocupante_id;
+  } else {
+    // Fallback: usar propietario si no se puede determinar
+    clienteId = propiedad.propietario_id;
+  }
+
+  if (!clienteId) {
+    // Si no hay cliente, usar precio base del servicio sin configuración
+    return calcularValorServicio(propiedad, servicio as ServicioInfo, null);
+  }
+
+  // Buscar configuración específica por servicio_id primero
+  let config: any = null;
+  const { data: configPorServicio } = await supabase
     .from("configuraciones_facturacion")
     .select("tasa_base_especial,aplica_iva_general,porcentaje_iva_general")
     .eq("propiedad_id", propiedad.id)
@@ -144,6 +161,23 @@ export async function fetchValorServicio(
     .eq("servicio_id", servicio.id)
     .eq("activo", true)
     .maybeSingle();
+
+  if (configPorServicio) {
+    config = configPorServicio;
+  } else {
+    // Si no hay configuración específica por servicio, buscar genérica
+    const { data: configGenerica } = await supabase
+      .from("configuraciones_facturacion")
+      .select("tasa_base_especial,aplica_iva_general,porcentaje_iva_general")
+      .eq("propiedad_id", propiedad.id)
+      .eq("cliente_id", clienteId)
+      .eq("activo", true)
+      .maybeSingle();
+    
+    if (configGenerica) {
+      config = configGenerica;
+    }
+  }
 
   return calcularValorServicio(propiedad, servicio as ServicioInfo, config);
 } 
